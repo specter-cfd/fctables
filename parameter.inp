@@ -1,0 +1,17 @@
+! The following parameters are mandatory.
+&required
+odir = 'tables'   ! Output directory.
+d    = 5          ! Number of matching points in physical domain.
+c    = 25         ! Number of continuation points to use.
+/
+
+
+! This parameters are optional and can be left blank.
+! In that case, the code will make educated guesses.
+! Use only in case of convergence problems.
+&option
+z    =         ! Points in the zero region.
+o    =         ! Oversampling factor.
+bw   =         ! Bandwith reduction.
+e    =         ! Grid extension points (points after zero region).
+/
