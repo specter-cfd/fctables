@@ -1,0 +1,44 @@
+# ===============================================
+#           Makefile for fc_tables
+# ==============================================
+
+# Number of decimal digits to use in computations
+# (Must be > 32 )
+DIGITS = 128
+
+# MPFUN version to use. Possible options are 
+# 'mpfr' and 'fort'. mpfr is faster but is harder
+# to build and might require fine-tuning in some
+# systems.
+MPFUN_VERSION = mpfr
+
+# Choose if OpenMP parallelization is to be used.
+# Options are 'yes' and 'no'. yes is recommended.
+OPENMP = yes
+
+# Compiler election. Possible options are
+# GNU and INTEL.
+COMPILER = GNU
+
+# ***********************************************
+#       Compiler specific section
+# C preprocesor and C and Fortran compilers.
+# Note: The flags only affect fc_tables, not
+# it's dependencies.
+
+# Intel compiler
+CPP_INTEL     = 
+FC_INTEL      =
+CC_INTEL      =
+FFLAGS_INTEL  = -O3 -no-prec-div -fp-model fast=2 -align
+INTEL_OMP     = -fopenmp
+TARGET_INTEL  = 
+
+
+# GFortran compiler (GNU)
+CPP_GNU       = cpp -traditional-cpp
+FC_GNU        = gfortran -fbounds-check
+CC_GNU        = gcc
+FFLAGS_GNU    = -O3 -funroll-loops
+GNU_OMP       = -fopenmp
+TARGET_GNU    = -mtune=native -mfpmath=both
