@@ -1,1 +1,7 @@
 tables/
+job*.out
+run.sh
+**/build/
+**/*.mod
+**/*.o
+fc_tables.f90

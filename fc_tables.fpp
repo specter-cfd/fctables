@@ -60,6 +60,8 @@
       INTEGER :: bw,nwn
       INTEGER :: i,j,k,l
 
+!$    INTEGER :: nth
+!$    INTEGER, EXTERNAL :: OMP_GET_MAX_THREADS
 
       CHARACTER (LEN=100) :: odir
       CHARACTER (LEN=25)  :: ph
@@ -82,6 +84,11 @@
       IF ( o  .eq. 0 )  o  = 10
       IF ( bw .eq. 0 )  bw = int(C/15.0 + 3)
       IF ( e  .eq. 0 )  e  = 25
+
+      nth = OMP_GET_MAX_THREADS()
+
+      PRINT*, "Running in ", nth, " cores with ", DIGS, "digits of precision."
+      PRINT*, "z=", z, ", o=", o, ", bw=", bw, ", e=", e
 
       ! Assign derived parameters
       n = d+c+z+e
