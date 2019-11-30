@@ -3,7 +3,7 @@
 ----
 FC Tables is a Fortran 90 program that computes FC-Gram tables. 
 
-This program heavily utilizes the [MPFUN2015](https://www.davidhbailey.com/dhbsoftware/) library for arbitrary precision floating point arithmetic. This library comes in two variants and both are included. The first one, **MPFUN-Fort**, is a pure Fortran implementation, which is straightforward to compile. The second variant, **MPFUN-MPFR**, depends on the C libraries **GMP** and **MPFR** and, although trickier to compile, delivers about 5x faster performance. It is, however, very simply to choose which variant of MPFUN should FC Tables  try compile.
+This program heavily utilizes the [MPFUN2015](https://www.davidhbailey.com/dhbsoftware/) library for arbitrary precision floating point arithmetic. This library comes in two variants and both are included. The first one, **MPFUN-Fort**, is a pure Fortran implementation, which is straightforward to compile. The second variant, **MPFUN-MPFR**, depends on the C libraries **GMP** and **MPFR** and, although trickier to compile, delivers about 5x faster performance. It is, however, very simple to choose which variant of MPFUN should FC Tables try compile.
 
 FC Tables can also take advantage of multicore processors by utilizing OpenMP to split loops across multiple threads.
 
@@ -22,11 +22,11 @@ More information about the FC-Gram algorithm to perform periodic continuations o
 2. Run `./fc_tables` in the project directory.
 
 ## Veryfing the tables
-For convenience a simple program that compares numerical (using FC-Gram continuations) to analytical derivatives of the function $`J_0(x)e^x`$ is also supplied. 
+For convenience a simple Fortran 2008 program that compares numerical (using FC-Gram continuations) to analytical derivatives of the function $`J_0(x)e^x`$ is also supplied. If a Fortran 2008 compiler isn't available to you, it should be straight forward to edit `fc_test.f08`, edit the target function and compile it as a Fortran 90 program.
 
-To compile the test program simply run, after compiling `fc_tables`, the command `make test` and execute the newly generated binary with `./fc_test N`, where `N` the number of grid points to use (which must be a power of two due to the `fft` implementation)
+To compile the test program simply run, after compiling `fc_tables`, the command `make test` and execute the newly generated binary as `./fc_test N`, where `N` the number of grid points to use (which must be a power of 2 due to the simplicity of the `fft` implementation).
 
-The necessary table is automatically loaded based on the values present in the `parameter.inp` file.
+The necessary table is automatically loaded and tested based on the values present in the `parameter.inp` file.
 
 
 ### Author

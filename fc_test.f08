@@ -4,13 +4,8 @@
 ! Simple unoptimized fft borrowed from
 ! https://rosettacode.org/wiki/Fast_Fourier_transform#Fortran.
 !
-      use, intrinsic :: iso_fortran_env
-
       IMPLICIT NONE
-      INTEGER,       PARAMETER :: sp=REAL32
-      INTEGER,       PARAMETER :: dp=2*REAL32
-
-      INTEGER,       PARAMETER :: wp=sp
+      INTEGER,       PARAMETER :: wp=selected_real_kind(15,300)
       REAL(KIND=wp), PARAMETER :: pi=3.141592653589793238460_wp
       CONTAINS
        
@@ -61,7 +56,11 @@
 ! =====================================================================
       USE fft_mod
     
+<<<<<<< HEAD
       REAL (KIND=REAL64)  , DIMENSION(:,:), ALLOCATABLE  :: Q,A
+=======
+      REAL (KIND=wp)  , DIMENSION(:,:), ALLOCATABLE  :: Q,A
+>>>>>>> 748e235c7de542155f5c1d0d50fe659a80d21423
 
       COMPLEX(KIND=wp), DIMENSION(:), ALLOCATABLE    :: f
       REAL(KIND=wp)   , DIMENSION(:), ALLOCATABLE    :: fp,x,k

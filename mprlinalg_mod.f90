@@ -380,8 +380,6 @@
          DO jj=1,n/2
             i = sweep(1,jj,ii)
             j = sweep(2,jj,ii)
-!      DO i = 1,n-1
-!        DO j = i+1,n
 
             alpha = mpreal('0.')
             beta = mpreal('0.')

@@ -1,8 +1,8 @@
 ! The following parameters are mandatory.
 &required
 odir = 'tables'   ! Output directory.
-d    = 7          ! Number of matching points in physical domain.
-c    = 494         ! Number of continuation points to use.
+d    = 5          ! Number of matching points in physical domain.
+c    = 25         ! Number of continuation points to use.
 /
 
 
@@ -11,7 +11,7 @@ c    = 494         ! Number of continuation points to use.
 ! Use only in case of convergence problems.
 &option
 z    =         ! Points in the zero region.
-o    = 5       ! Oversampling factor.
+o    =         ! Oversampling factor.
 bw   =         ! Bandwith reduction.
 e    =         ! Grid extension points (points after zero region).
 /
