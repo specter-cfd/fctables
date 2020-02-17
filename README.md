@@ -21,7 +21,7 @@ More information about the FC-Gram algorithm to perform periodic continuations o
 1. Edit `parameter.inp` and select the desired table (i.e. a number of matching points —`d`— and continuation points —`c`—) and the output directory (`odir`).
 2. Run `./fc_tables` in the project directory.
 
-## Veryfing the tables
+## Verifying the tables
 For convenience a simple Fortran 2008 program that compares numerical (using FC-Gram continuations) to analytical derivatives of the function $`J_0(x)e^x`$ is also supplied. If a Fortran 2008 compiler isn't available to you, it should be straight forward to edit `fc_test.f08`, edit the target function and compile it as a Fortran 90 program.
 
 To compile the test program simply run, after compiling `fc_tables`, the command `make test` and execute the newly generated binary as `./fc_test N`, where `N` the number of grid points to use (which must be a power of 2 due to the simplicity of the `fft` implementation).
