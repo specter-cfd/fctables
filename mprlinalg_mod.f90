@@ -169,7 +169,7 @@
 !           - U: matrix of np_real type.
 !
 !     Output:
-!           - Transpose of A, of type mp_real.
+!           - X: matrix of type mp_real.
 !-----------------------------------------------------------------
 
       IMPLICIT NONE

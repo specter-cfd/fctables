@@ -37,7 +37,6 @@
       ! Vandermonde matrices, QR decomposition matrices,
       ! Trigonometric polynomial matrices and SVD matrices.
       TYPE (mp_real), DIMENSION(:,:), ALLOCATABLE :: P,Q,R
-      TYPE (mp_real), DIMENSION(:,:), ALLOCATABLE :: Qder,Rder
       TYPE (mp_real), DIMENSION(:,:), ALLOCATABLE :: oP,oQ
       TYPE (mp_real), DIMENSION(:,:), ALLOCATABLE :: T1,T2,A
       TYPE (mp_real), DIMENSION(:,:), ALLOCATABLE :: U,V
@@ -60,7 +59,6 @@
       INTEGER :: o,od,oc,oz,on
       INTEGER :: bw,nwn
       INTEGER :: i,j,k,l
-      INTEGER :: neum
 
 !$    INTEGER :: nth
 !$    INTEGER, EXTERNAL :: OMP_GET_MAX_THREADS
@@ -70,7 +68,7 @@
       CHARACTER (LEN=5)   :: cs,ds
 
       ! Namelists for parameters
-      NAMELIST / required / odir,d,c,neum
+      NAMELIST / required / odir,d,c
       NAMELIST / option / z,o,bw,e
 
       DIGS = _DIGITS
@@ -112,7 +110,6 @@
       ! they are small enough that allocating in common block should
       ! not incur in appreciable overhead.
       ALLOCATE( P(d,d), Q(d,d), R(d,d) )
-      ALLOCATE( Qder(d,d), Rder(d,d) )
       ALLOCATE( oP(od,d), oQ(od,d) )
       ALLOCATE( T1(od+oz,2*nwn), U(od+oz,2*nwn), V(2*nwn,2*nwn) )
       ALLOCATE( T2(c,2*nwn), A(c,d) )
@@ -142,143 +139,115 @@
       wn      = (/( i*mpreal('1.'), i=-n/2+bw,n/2-bw )/)
 
 
-      ! Construct Vandermonde matrices
+      ! Construct modified Vandermonde matrices
       DO j=1,d
-         DO i=1,d
+         DO i=1,d-1
             P(i,j) = grid_d(i)**(j-1)
          ENDDO
-         DO i=1,od
+         P(d,j) = (j-1)*grid_d(d)**(j-2)
+
+!         ! Derivative only in last row
+!         DO i=1,od-1
+!            oP(i,j) = ogrid_d(i)**(j-1)
+!         ENDDO
+!         oP(od,j) = (j-1)*ogrid_d(od)**(j-2)
+
+         ! Derivative in last o+1 points
+         DO i=1,o*(d-2)+1
             oP(i,j) = ogrid_d(i)**(j-1)
          ENDDO
+         DO i=o*(d-2)+2,od
+            oP(i,j) = (j-1)*ogrid_d(i)**(j-2)
+         ENDDO
+
       ENDDO
       ! Manual fix for mpreal's 0.0^0 == 0.0.
       P(1,1) = mpreal('1.'); oP(1,1) = mpreal('1.')
 
-
       ! Get QR decomposition of Vandermonde matrix in coarse grid.
       CALL mprqr(P,Q,R)
 
-      IF ( neum .eq. 1 ) THEN
-         ! Modified Vandermonde matrix
-         DO j=1,d
-               P(d,j) = (j-1)*grid_d(d)**(j-2)
+      ! Use R to "interpolate" Q in the finer grid.
+      oQ = MPRSOLVEU(R,oP)
+
+
+      ! Construct generic trigonometric polynomial in [0, 1) domain
+      ! over oversampled matching and zero grids.
+      DO j = 1,nwn
+         DO i=1,od
+            T1(i,j) = cos(2*mppi()*ogrid_d(i)*wn(j))
+            T1(i,j+nwn) = sin(2*mppi()*ogrid_d(i)*wn(j))
+         ENDDO
+         DO i=1,oz
+            T1(od+i,j) = cos(2*mppi()*ogrid_z(i)*wn(j))
+            T1(od+i,j+nwn) = sin(2*mppi()*ogrid_z(i)*wn(j))
+         ENDDO
+      ENDDO
+
+      ! Get SVD decomposition of T1
+      CALL mprsvd(T1,U,s,V)
+
+
+      ! Construct generic trigonometric polynomial in [0,1) domain
+      ! over the continuation points
+      DO j = 1,nwn
+         DO i=1,C
+            T2(i,j) = cos(2*mppi()*grid_n(d+i)*wn(j))
+            T2(i,j+nwn) = sin(2*mppi()*grid_n(d+i)*wn(j))
+         ENDDO
+      ENDDO
+
+
+      ! Solve system of equations for each orthogonal polynomial
+      DO i=1,d
+         ! RHS
+         b(1:od) = (/( oQ(k,i), k=1,od )/)
+         b(od+1:od+oz) = (/( mpreal('0.'), k=1,oz )/)
+
+         ! Compute D*V^t*x
+         x = MPRMATVEC(MPRTRANSPOSE(U), b)
+
+         ! Compute V^t*x. (i.e. divide x_i by s_i)
+         DO j = 1,2*nwn
+            IF ( s(j) >= eigenmin ) x(j) = x(j)/s(j)
          ENDDO
 
-         CALL mprqr(P,Qder,Rder)
-         Q = MPRTRANSPOSE(Qder)
+         ! Compute x
+         x = MPRMATVEC(V, x)
 
-         ! Find R^-1 by using MPRSOLVU
-         DO j=1,d
-            DO i=1,d
-               IF ( i .eq. j ) THEN
-                  P(i,j) = mpreal('1.0')
-               ELSE
-                  P(i,j) = mpreal('0.0')
-               ENDIF
-            ENDDO
-         ENDDO
-         Qder = MPRSOLVEU(Rder,P)
+         ! Get continuation coefficients
+         A(:,i) = MPRMATVEC(T2, x)
+      ENDDO
 
-         P = MPRMATMUL(Qder,Q)
-         Rder = MPRMATMUL(R,P)
-         Qder = MPRTRANSPOSE(Rder)
 
-         ! Convert to DOUBLE and save
-         DO j=1,d
-            DO i=1,d
-               Qd(i,j) = DBLE(Qder(i,j))
-            ENDDO
+      ! Convert to DOUBLE and save
+      DO j=1,d
+         DO i=1,C
+            Ad(i,j) = DBLE(A(i,j))
          ENDDO
-   
-         OPEN(10, FILE=trim(odir) // '/Qn' // trim(adjustl(ds)) //  '.dat', &
-                 FORM='unformatted', ACCESS='stream')
-            WRITE(10) Qd
-         CLOSE(10)
+      ENDDO
 
-      ELSEIF ( neum .eq. 0 ) THEN
-         ! Use R to "interpolate" Q in the finer grid.
-         oQ = MPRSOLVEU(R,oP)
-   
-   
-         ! Construct generic trigonometric polynomial in [0, 1) domain
-         ! over oversampled matching and zero grids.
-         DO j = 1,nwn
-            DO i=1,od
-               T1(i,j) = cos(2*mppi()*ogrid_d(i)*wn(j))
-               T1(i,j+nwn) = sin(2*mppi()*ogrid_d(i)*wn(j))
-            ENDDO
-            DO i=1,oz
-               T1(od+i,j) = cos(2*mppi()*ogrid_z(i)*wn(j))
-               T1(od+i,j+nwn) = sin(2*mppi()*ogrid_z(i)*wn(j))
-            ENDDO
-         ENDDO
-   
-         ! Get SVD decomposition of T1
-         CALL mprsvd(T1,U,s,V)
-   
-   
-         ! Construct generic trigonometric polynomial in [0,1) domain
-         ! over the continuation points
-         DO j = 1,nwn
-            DO i=1,C
-               T2(i,j) = cos(2*mppi()*grid_n(d+i)*wn(j))
-               T2(i,j+nwn) = sin(2*mppi()*grid_n(d+i)*wn(j))
-            ENDDO
-         ENDDO
-   
-   
-         ! Solve system of equations for each orthogonal polynomial
+      ! Convert to DOUBLE and save
+      DO j=1,d
          DO i=1,d
-            ! RHS
-            b(1:od) = (/( oQ(k,i), k=1,od )/)
-            b(od+1:od+oz) = (/( mpreal('0.'), k=1,oz )/)
-   
-            ! Compute D*V^t*x
-            x = MPRMATVEC(MPRTRANSPOSE(U), b)
-   
-            ! Compute V^t*x. (i.e. divide x_i by s_i)
-            DO j = 1,2*nwn
-               IF ( s(j) >= eigenmin ) x(j) = x(j)/s(j)
-            ENDDO
-   
-            ! Compute x
-            x = MPRMATVEC(V, x)
-   
-            ! Get continuation coefficients
-            A(:,i) = MPRMATVEC(T2, x)
+            Qd(i,j) = DBLE(Q(i,j))
          ENDDO
-   
-   
-         ! Convert to DOUBLE and save
-         DO j=1,d
-            DO i=1,C
-               Ad(i,j) = DBLE(A(i,j))
-            ENDDO
-         ENDDO
-   
-         ! Convert to DOUBLE and save
-         DO j=1,d
-            DO i=1,d
-               Qd(i,j) = DBLE(Q(i,j))
-            ENDDO
-         ENDDO
-   
-         OPEN(10, FILE=trim(odir) // '/A' // trim(adjustl(cs)) // '-' // &
-                 trim(adjustl(ds)) //  '.dat', &
-                 FORM='unformatted', ACCESS='stream')
-            WRITE(10) Ad
-         CLOSE(10)
-   
-         OPEN(10, FILE=trim(odir) // '/Q' // trim(adjustl(ds)) //  '.dat', &
-                 FORM='unformatted', ACCESS='stream')
-            WRITE(10) Qd
-         CLOSE(10)
-      ENDIF
+      ENDDO
+
+      OPEN(10, FILE=trim(odir) // '/Ader' // trim(adjustl(cs)) // '-' // &
+              trim(adjustl(ds)) //  '.dat', &
+              FORM='unformatted', ACCESS='stream')
+         WRITE(10) Ad
+      CLOSE(10)
+
+      OPEN(10, FILE=trim(odir) // '/Qder' // trim(adjustl(ds)) //  '.dat', &
+              FORM='unformatted', ACCESS='stream')
+         WRITE(10) Qd
+      CLOSE(10)
 
 
       ! Finish
       DEALLOCATE( P, Q, R)
-      DEALLOCATE( Qder, Rder)
       DEALLOCATE( oP, oQ )
       DEALLOCATE( T1, U, V )
       DEALLOCATE( T2, A )

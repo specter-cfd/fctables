@@ -36,6 +36,14 @@ fc_tables: mpfun
 		contrib/mpfun_$(MPFUN_VERSION)/*.o $(MPFUNDEP) \
 		-Icontrib/mpfun_$(MPFUN_VERSION) -o fc_tables
 
+
+fc_neumann: mpfun
+	$(CPP) -D_DIGITS=$(DIGITS) fc_neumann.fpp -o fc_neumann.f90 
+	$(FC) $(FFLAGS) $(LOPENMP) mprlinalg_mod.f90 fc_neumann.f90 \
+		contrib/mpfun_$(MPFUN_VERSION)/*.o $(MPFUNDEP) \
+		-Icontrib/mpfun_$(MPFUN_VERSION) -o fc_neumann
+
+
 mpfun:
 	$(MAKE) -C contrib/mpfun_$(MPFUN_VERSION)
 
