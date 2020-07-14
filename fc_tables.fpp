@@ -74,7 +74,7 @@
       NAMELIST / option / z,o,bw,e
 
       DIGS = _DIGITS
-      eigenmin = mpreal('1.e-25')
+      eigenmin = mpreal('1.e-50')
 
       OPEN(1,file='parameter.inp',status='unknown',form="formatted")
          READ(1,NML=required)
@@ -86,10 +86,10 @@
       WRITE(ds,'(I5)') d
 
       ! Fill optional parameters if not defined.
-      IF ( z  .eq. 0 )  z  = int(0.6*c)
-      IF ( o  .eq. 0 )  o  = 10
-      IF ( bw .eq. 0 )  bw = int(C/15.0 + 3)
-      IF ( e  .eq. 0 )  e  = 25
+      IF ( z  .eq. 0 )  z  = int(0.5*c)
+      IF ( o  .eq. 0 )  o  = 20
+      IF ( bw .eq. 0 )  bw = 4 
+      IF ( e  .eq. 0 )  e  = c
 
       nth = OMP_GET_MAX_THREADS()
 
@@ -158,6 +158,29 @@
       ! Get QR decomposition of Vandermonde matrix in coarse grid.
       CALL mprqr(P,Q,R)
 
+
+      ! Convert to DOUBLE and save
+      DO j=1,d
+         DO i=1,d
+            Qd(i,j) = DBLE(Q(i,j))
+         ENDDO
+      ENDDO
+      OPEN(10, FILE=trim(odir) // '/Q.dat', FORM='unformatted', ACCESS='stream')
+         WRITE(10) Qd
+      CLOSE(10)
+
+
+      ! Convert to DOUBLE and save
+      DO j=1,d
+         DO i=1,d
+            Qd(i,j) = DBLE(R(i,j))
+         ENDDO
+      ENDDO
+      OPEN(10, FILE=trim(odir) // '/R.dat', FORM='unformatted', ACCESS='stream')
+         WRITE(10) Qd
+      CLOSE(10)
+
+
       IF ( neum .eq. 1 ) THEN
          ! Modified Vandermonde matrix
          DO j=1,d
@@ -165,8 +188,8 @@
          ENDDO
 
          CALL mprqr(P,Qder,Rder)
-         Q = MPRTRANSPOSE(Qder)
 
+         Q = MPRTRANSPOSE(Qder)
          ! Find R^-1 by using MPRSOLVU
          DO j=1,d
             DO i=1,d
@@ -183,7 +206,7 @@
          Rder = MPRMATMUL(R,P)
          Qder = MPRTRANSPOSE(Rder)
 
-         ! Convert to DOUBLE and save
+         ! Convert to DOUBLE and save both the grid spacing and Q to file
          DO j=1,d
             DO i=1,d
                Qd(i,j) = DBLE(Qder(i,j))
@@ -192,6 +215,7 @@
    
          OPEN(10, FILE=trim(odir) // '/Qn' // trim(adjustl(ds)) //  '.dat', &
                  FORM='unformatted', ACCESS='stream')
+            WRITE(10) DBLE(grid_n(2))
             WRITE(10) Qd
          CLOSE(10)
 
