@@ -54,12 +54,13 @@
       TYPE (mp_real), DIMENSION(:), ALLOCATABLE :: x,b
 
       ! Parameters and auxiliary variables
+      TYPE (mp_real)   :: L
       TYPE (mp_real)   :: mprmp,mprmq
 
       INTEGER :: d,c,z,e,n
       INTEGER :: o,od,oc,oz,on
       INTEGER :: bw,nwn
-      INTEGER :: i,j,k,l
+      INTEGER :: i,j,k
       INTEGER :: neum
 
 !$    INTEGER :: nth
@@ -106,82 +107,86 @@
 
       nwn = 2*(n/2-bw)+1
 
-
       ! Allocate first batch of matrices and all the vectors
       ! NOTE: Der matrices are used only for Neumann tables, however
       ! they are small enough that allocating in common block should
       ! not incur in appreciable overhead.
       ALLOCATE( P(d,d), Q(d,d), R(d,d) )
       ALLOCATE( Qder(d,d), Rder(d,d) )
+      ALLOCATE( Qd(d,d), Ad(C,d) )
+      ALLOCATE( grid_n(n), grid_d(d))
+#ifdef BLEND_
       ALLOCATE( oP(od,d), oQ(od,d) )
+      ALLOCATE( s(2*nwn), grid_z(z) )
       ALLOCATE( T1(od+oz,2*nwn), U(od+oz,2*nwn), V(2*nwn,2*nwn) )
       ALLOCATE( T2(c,2*nwn), A(c,d) )
-
-      ALLOCATE( Qd(d,d), Ad(C,d) )
-
-      ALLOCATE( s(2*nwn) )
-      ALLOCATE( grid_n(n), grid_d(d), grid_z(z) )
       ALLOCATE( ogrid_d(od), ogrid_z(oz) )
       ALLOCATE( wn(nwn) )
       ALLOCATE( x(2*nwn), b(od+oz) )
+#endif
 
       ! Populate grids
       WRITE(ph,'(i25)') n
-      mprmp = 1/mpreal(ph//'.')
+      ! Length of the domain
+      L = mpreal('1.0')
+
+      mprmp = L/mpreal(ph//'.')
 
       WRITE(ph,'(i25)') on
-      mprmq = 1/mpreal(ph//'.')
+      mprmq = L/mpreal(ph//'.')
       
       grid_n  = (/( (i-1)*mprmp, i=1,n )/)
       grid_d  = (/( (i-1)*mprmp, i=1,d )/)
-      grid_z  = (/( (d+C+i-1)*mprmp, i=1,z )/)
 
+#ifdef BLEND_
+      grid_z  = (/( (d+C+i-1)*mprmp, i=1,z )/)
       ogrid_d = (/( (i-1)*mprmq, i=1,od )/)
       ogrid_z = (/( (d+C)*mprmp + (i-1)*mprmq, i=1,oz )/)
 
       wn      = (/( i*mpreal('1.'), i=-n/2+bw,n/2-bw )/)
-
+#endif
 
       ! Construct Vandermonde matrices
       DO j=1,d
          DO i=1,d
             P(i,j) = grid_d(i)**(j-1)
          ENDDO
+      ENDDO
+      ! Manual fix for mpreal's 0.0^0 == 0.0.
+      P(1,1) = mpreal('1.')
+
+#ifdef BLEND_
+      DO j=1,d
          DO i=1,od
             oP(i,j) = ogrid_d(i)**(j-1)
          ENDDO
       ENDDO
-      ! Manual fix for mpreal's 0.0^0 == 0.0.
-      P(1,1) = mpreal('1.'); oP(1,1) = mpreal('1.')
-
+      oP(1,1) = mpreal('1.')
+#endif
 
       ! Get QR decomposition of Vandermonde matrix in coarse grid.
       CALL mprqr(P,Q,R)
 
-
-      ! Convert to DOUBLE and save
-      DO j=1,d
-         DO i=1,d
-            Qd(i,j) = DBLE(Q(i,j))
+      ! ---------------------
+      ! Dirichlet Projector
+      ! ---------------------
+      IF ( neum .eq. 0 ) THEN
+         ! Convert to DOUBLE and save
+         DO j=1,d
+            DO i=1,d
+               Qd(i,j) = DBLE(Q(i,j))
+            ENDDO
          ENDDO
-      ENDDO
-      OPEN(10, FILE=trim(odir) // '/Q.dat', FORM='unformatted', ACCESS='stream')
-         WRITE(10) Qd
-      CLOSE(10)
 
+         OPEN(10, FILE=trim(odir) // '/Q' // trim(adjustl(ds)) //  '.dat', &
+                 FORM='unformatted', ACCESS='stream')
+            WRITE(10) Qd
+         CLOSE(10)
 
-      ! Convert to DOUBLE and save
-      DO j=1,d
-         DO i=1,d
-            Qd(i,j) = DBLE(R(i,j))
-         ENDDO
-      ENDDO
-      OPEN(10, FILE=trim(odir) // '/R.dat', FORM='unformatted', ACCESS='stream')
-         WRITE(10) Qd
-      CLOSE(10)
-
-
-      IF ( neum .eq. 1 ) THEN
+      !---------------------
+      ! Neumann Projector
+      !---------------------
+      ELSEIF ( neum .eq. 1 ) THEN
          ! Modified Vandermonde matrix
          DO j=1,d
                P(d,j) = (j-1)*grid_d(d)**(j-2)
@@ -219,7 +224,94 @@
             WRITE(10) Qd
          CLOSE(10)
 
-      ELSEIF ( neum .eq. 0 ) THEN
+      !---------------------
+      ! Neumann^2 Projector
+      !---------------------
+      ELSE IF ( neum .eq. 2 ) THEN
+         ! Modified Vandermonde matrix
+         DO j=1,d
+               P(d,j) = (j-2)*(j-1)*grid_d(d)**(j-3)
+         ENDDO
+
+         CALL mprqr(P,Qder,Rder)
+
+         Q = MPRTRANSPOSE(Qder)
+         ! Find R^-1 by using MPRSOLVU
+         DO j=1,d
+            DO i=1,d
+               IF ( i .eq. j ) THEN
+                  P(i,j) = mpreal('1.0')
+               ELSE
+                  P(i,j) = mpreal('0.0')
+               ENDIF
+            ENDDO
+         ENDDO
+         Qder = MPRSOLVEU(Rder,P)
+
+         P = MPRMATMUL(Qder,Q)
+         Rder = MPRMATMUL(R,P)
+         Qder = MPRTRANSPOSE(Rder)
+
+         ! Convert to DOUBLE and save both the grid spacing and Q to file
+         DO j=1,d
+            DO i=1,d
+               Qd(i,j) = DBLE(Qder(i,j))
+            ENDDO
+         ENDDO
+   
+         OPEN(10, FILE=trim(odir) // '/Q2n' // trim(adjustl(ds)) //  '.dat', &
+                 FORM='unformatted', ACCESS='stream')
+            WRITE(10) DBLE(grid_n(2))
+            WRITE(10) Qd
+         CLOSE(10)
+
+      !---------------------
+      ! Robin Projector
+      !---------------------
+      ELSE IF ( neum .eq. 3 ) THEN  !Robin
+         ! Modified Vandermonde matrix
+         DO j=1,d
+               P(d,j) = (j-1)*grid_d(d)**(j-2) + mpreal('1.0')*grid_d(d)**(j-1)
+         ENDDO
+
+         CALL mprqr(P,Qder,Rder)
+
+         Q = MPRTRANSPOSE(Qder)
+         ! Find R^-1 by using MPRSOLVU
+         DO j=1,d
+           DO i=1,d
+               IF ( i .eq. j ) THEN
+                  P(i,j) = mpreal('1.0')
+               ELSE
+                  P(i,j) = mpreal('0.0')
+               ENDIF
+            ENDDO
+         ENDDO
+         Qder = MPRSOLVEU(Rder,P)
+
+         P = MPRMATMUL(Qder,Q)
+         Rder = MPRMATMUL(R,P)
+         Qder = MPRTRANSPOSE(Rder)
+
+         ! Convert to DOUBLE and save both the grid spacing and Q to file
+         DO j=1,d
+            DO i=1,d
+               Qd(i,j) = DBLE(Qder(i,j))
+            ENDDO
+         ENDDO
+   
+         OPEN(10, FILE=trim(odir) // '/Qr-' // trim(adjustl(ds)) //  'a1.dat', &
+                 FORM='unformatted', ACCESS='stream')
+            WRITE(10) DBLE(grid_n(2))
+            WRITE(10) Qd
+         CLOSE(10)
+      ENDIF
+
+#ifdef BLEND_
+      !-------------------------------
+      ! Blend-to-zero Operator
+      !-------------------------------
+      IF ( neum .eq. 0 ) THEN
          ! Use R to "interpolate" Q in the finer grid.
          oQ = MPRSOLVEU(R,oP)
    
@@ -280,12 +372,6 @@
             ENDDO
          ENDDO
    
-         ! Convert to DOUBLE and save
-         DO j=1,d
-            DO i=1,d
-               Qd(i,j) = DBLE(Q(i,j))
-            ENDDO
-         ENDDO
    
          OPEN(10, FILE=trim(odir) // '/A' // trim(adjustl(cs)) // '-' // &
                  trim(adjustl(ds)) //  '.dat', &
@@ -293,28 +379,22 @@
             WRITE(10) Ad
          CLOSE(10)
    
-         OPEN(10, FILE=trim(odir) // '/Q' // trim(adjustl(ds)) //  '.dat', &
-                 FORM='unformatted', ACCESS='stream')
-            WRITE(10) Qd
-         CLOSE(10)
       ENDIF
-
+#endif
 
       ! Finish
       DEALLOCATE( P, Q, R)
       DEALLOCATE( Qder, Rder)
+      DEALLOCATE( Qd, Ad )
+      DEALLOCATE( grid_n, grid_d)
+#ifdef BLEND_
       DEALLOCATE( oP, oQ )
       DEALLOCATE( T1, U, V )
       DEALLOCATE( T2, A )
-
-      DEALLOCATE( Qd, Ad )
-
-      DEALLOCATE( s )
-      DEALLOCATE( grid_n, grid_d, grid_z)
+      DEALLOCATE( s, grid_z )
       DEALLOCATE( ogrid_d, ogrid_z )
       DEALLOCATE( wn )
       DEALLOCATE( x, b )
-
-
+#endif
 
       END PROGRAM FCTABLES

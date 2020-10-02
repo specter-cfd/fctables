@@ -60,7 +60,7 @@ integer, public:: mpipl
 
 !  *** Set the default precision level (in digits) here.
 
-parameter (mpipl = 128)
+parameter (mpipl = 512)
 
 !----------------------------------------------------------------------------
 

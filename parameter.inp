@@ -1,9 +1,9 @@
 ! The following parameters are mandatory.
 &required
 odir = 'tables'   ! Output directory.
-d    = 5          ! Number of matching points in physical domain.
-c    = 25         ! Number of continuation points to use.
-neum = 1          ! Create tables for Neumann boundary conditions.
+d    = 9          ! Number of matching points in physical domain.
+c    = 33         ! Number of continuation points to use.
+neum = 0          ! Create tables for Neumann boundary conditions.
 !                 ! 0 creates tables only for Dirichlet conditions.
 /
 
