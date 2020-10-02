@@ -5,3 +5,5 @@ run.sh
 **/*.mod
 **/*.o
 fc_tables.f90
+fc_tables
+*.mod
