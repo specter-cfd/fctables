@@ -169,7 +169,7 @@
 !           - U: matrix of np_real type.
 !
 !     Output:
-!           - Transpose of A, of type mp_real.
+!           - X: matrix of type mp_real.
 !-----------------------------------------------------------------
 
       IMPLICIT NONE
@@ -327,7 +327,7 @@
 
       ! Columns with inner product below eps*gmax
       ! are treated as orthogonal for the current sweep.
-      eps = mpreal('1.e-6')
+      eps = mpreal('1.e-30')
       gmax = mpreal('0.')  ! 1st sweep uses all columns
 
       m = UBOUND(A,1)
@@ -368,11 +368,14 @@
       ! ad-hoc according to precision level. This isn't optimal
       ! but probably okay for the reasonable values of precision
       ! to be used.
-      DO iter=1,DIGS*25/35+50
+!      DO iter=1,DIGS*25/35+50
+      DO iter=1,200
+
       igmax = mpreal('0.')
 
 100   FORMAT( a , 'SVD Sweep : ',i3,' out of a total of ',i3)
-      WRITE(*,100,advance="no") ACHAR(13), iter, DIGS*25/35+50
+!      WRITE(*,100,advance="no") ACHAR(13), iter, DIGS*25/35+50
+      WRITE(*,100,advance="no") ACHAR(13), iter, 200
 
       DO ii=1,n-1
          jgmax = mpreal('0.')

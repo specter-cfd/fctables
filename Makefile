@@ -22,6 +22,9 @@ DO_HYBRIDyes   = $($(COMPILER)_OMP)
 DO_HYBRIDno    =
 LOPENMP        = $(DO_HYBRID$(OPENMP))
 
+BLENDyes = -DBLEND
+BLENDno  =
+
 MPFUNDEP_fort  = 
 MPFUNDEP_mpfr  = contrib/mpfun_mpfr/mpfr/build/lib/libmpfr.a
 MPFUNDEP_mpfr += $(MPFUNDER_mpfr) contrib/mpfun_mpfr/gmp/build/lib/libgmp.a
@@ -30,8 +33,13 @@ MPFUNDEP       = $(MPFUNDEP_$(MPFUN_VERSION))
 
 export FC COMPILER CC DIGITS
 
-fc_tables: mpfun
-	$(CPP) -D_DIGITS=$(DIGITS) fc_tables.fpp -o fc_tables.f90 
+all: fc_tables
+
+edit:
+	$(CPP) -D_DIGITS=$(DIGITS) $(BLEND($BLEND)) fc_tables.fpp \
+		-o fc_tables.f90 
+
+fc_tables: mpfun edit
 	$(FC) $(FFLAGS) $(LOPENMP) mprlinalg_mod.f90 fc_tables.f90 \
 		contrib/mpfun_$(MPFUN_VERSION)/*.o $(MPFUNDEP) \
 		-Icontrib/mpfun_$(MPFUN_VERSION) -o fc_tables

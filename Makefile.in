@@ -4,7 +4,11 @@
 
 # Number of decimal digits to use in computations
 # (Must be > 32 )
-DIGITS = 128
+DIGITS = 512
+
+# BLEND='yes' Build blend-to-zero operators.
+# BLEND='no'  Only perform QR decompositions.
+BLEND = no
 
 # MPFUN version to use. Possible options are 
 # 'mpfr' and 'fort'. mpfr is faster but is harder

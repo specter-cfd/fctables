@@ -1,13 +1,18 @@
 ! The following parameters are mandatory.
 &required
-odir = 'tables'   ! Output directory.
-d    = 5          ! Number of matching points in physical domain.
-c    = 25         ! Number of continuation points to use.
+odir = 'tables' ! Output directory.
+d    = 9        ! Number of matching points in physical domain.
+c    = 33       ! Number of continuation points to use.
+neum = 0        ! =0 creates projector for Dirichlet boundary condition
+!               ! and if compiled with BLEND=yes the blend-to-zero operator.
+!               ! =1 creates projector for Neumann BC.
+!               ! =2 creates projector for second normal derivative BC.
+!               ! =3 creates projector for Robin BC with hardcoded parameter.
 /
 
 
 ! This parameters are optional and can be left blank.
-! In that case, the code will make educated guesses.
+! In that case, the code will try to make educated guesses.
 ! Use only in case of convergence problems.
 &option
 z    =         ! Points in the zero region.
