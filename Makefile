@@ -22,7 +22,7 @@ DO_HYBRIDyes   = $($(COMPILER)_OMP)
 DO_HYBRIDno    =
 LOPENMP        = $(DO_HYBRID$(OPENMP))
 
-BLENDyes = -DBLEND
+BLENDyes = -DBLEND_
 BLENDno  =
 
 MPFUNDEP_fort  = 
@@ -36,7 +36,7 @@ export FC COMPILER CC DIGITS
 all: fc_tables
 
 edit:
-	$(CPP) -D_DIGITS=$(DIGITS) $(BLEND($BLEND)) fc_tables.fpp \
+	$(CPP) -D_DIGITS=$(DIGITS) $(BLEND$(BLEND)) fc_tables.fpp \
 		-o fc_tables.f90 
 
 fc_tables: mpfun edit
