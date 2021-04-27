@@ -4,11 +4,11 @@
 
 # Number of decimal digits to use in computations
 # (Must be > 32 )
-DIGITS = 512
+DIGITS = 256
 
 # BLEND='yes' Build blend-to-zero operators.
 # BLEND='no'  Only perform QR decompositions.
-BLEND = no
+BLEND = yes
 
 # MPFUN version to use. Possible options are 
 # 'mpfr' and 'fort'. mpfr is faster but is harder
@@ -41,8 +41,9 @@ TARGET_INTEL  =
 
 # GFortran compiler (GNU)
 CPP_GNU       = cpp -traditional-cpp
-FC_GNU        = gfortran -fbounds-check
+FC_GNU        = gfortran 
 CC_GNU        = gcc
 FFLAGS_GNU    = -O3 -funroll-loops
 GNU_OMP       = -fopenmp
 TARGET_GNU    = -mtune=native -mfpmath=both
+#TARGET_GNU    = -march=native

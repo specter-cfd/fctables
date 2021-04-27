@@ -1,2 +1,0 @@
-ifort -fast -heap-arrays -assume nounderscore -o $1 $1.f90 mpmodule.o mpfuna.o mpfunf.o mpfung2.o \
-  mpinterface.o secondu.o -lmpfr -lgmp

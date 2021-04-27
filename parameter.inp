@@ -1,22 +1,29 @@
 ! The following parameters are mandatory.
 &required
-odir = 'tables' ! Output directory.
-d    = 9        ! Number of matching points in physical domain.
-c    = 33       ! Number of continuation points to use.
-neum = 0        ! =0 creates projector for Dirichlet boundary condition
-!               ! and if compiled with BLEND=yes the blend-to-zero operator.
-!               ! =1 creates projector for Neumann BC.
-!               ! =2 creates projector for second normal derivative BC.
-!               ! =3 creates projector for Robin BC with hardcoded parameter.
+odir  = 'tables' ! Output directory.
+d     = 5        ! Number of matching points in physical domain.
+c     = 25       ! Number of continuation points to use.
+tkind = 0        ! =0 creates projector for Dirichlet boundary condition
+!                ! and if compiled with BLEND=yes the blend-to-zero operator.
+!                ! =1 creates projector for Neumann BC.
+!                ! =2 creates projector for second normal derivative BC.
 /
 
+! These are parameters for the SVD and partial outputs. If left blank,
+! the code will run for 200 iterations and won't output partial results,
+! just the resulting blend to zero operator A.
+&svd
+iters  =         ! Number of SVD iterations to perform. 
+resume =         ! 0 for fresh SVD start, 1 to resume from `svd_temp.dat`
+sstep  =         ! Save U and V every sstep SVD iterations.
+/
 
-! This parameters are optional and can be left blank.
+! These parameters are optional and can be left blank.
 ! In that case, the code will try to make educated guesses.
-! Use only in case of convergence problems.
+! Use only in case of convergence problems or very slow iterations.
 &option
-z    =         ! Points in the zero region.
-o    =         ! Oversampling factor.
-bw   =         ! Bandwith reduction.
-e    =         ! Grid extension points (points after zero region).
+o    =           ! Oversampling factor.
+bw   =           ! Bandwith reduction.
+z    =           ! Points in the (non oversampled) zero region.
+e    =           ! Grid extension points (points after zero region).
 /

@@ -1,0 +1,42 @@
+FFLAGS  = -O3
+
+SRC     = mpfun-fort/fortran
+#SRC     = .
+MODS    = $(sort $(wildcard mpfun*.f90)) second.o
+
+OBJS    = $(patsubst %.f90, %.mod, $(patsubst %, $(SRC)/%, $(MODS)))
+
+FC      = f95
+REGEX   = s/parameter (mpipl = [0-9]\+)/parameter (mpipl = $(DIGITS))/
+
+mpmodule.mod : $(OBJS)
+	$(FC) $(FFLAGS) -c mpmodule.f90 -o $(SRC)/mpmodule.mod
+
+# Explicit treatment of modules whose name differs from filename
+$(SRC)/mpfunb.mod : $(SRC)/mpfunbq.f90
+	@echo $(OBJS)
+	$(FC) $(FFLAGS) -c $(SRC)/mpfunbq.f90
+
+# mpfung depends on mpfunf which always gets recompiled
+$(SRC)/mpfung.mod : $(SRC)/mpfunf.mod $(SRC)/mpfungq1.f90
+	$(FC) $(FFLAGS) -c $(SRC)/mpfungq1.f90
+
+# Change precision
+$(SRC)/mpfunf.mod : $(SRC)/mpfunf.f90
+	sed -i '$(REGEX)' $(SRC)/mpfunf.f90
+	$(FC) $(FFLAGS) -c $(SRC)/mpfunf.f90
+
+$(SRC)/%.mod: $(SRC)/%.f90
+	$(FC) $(FFLAGS) -c $<
+
+$(SRC)/%.o: $(SRC)/%.f90
+	$(FC) $(FFLAGS) -c $<
+
+updatedigits :
+	
+clean :
+	rm $(SRC)/*.o $(SRC)/*.mod
+
+distclean : clean
+
+.PHONY : mpfunf.mod

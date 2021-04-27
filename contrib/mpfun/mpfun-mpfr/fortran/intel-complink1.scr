@@ -1,0 +1,2 @@
+ifort -fast -heap-arrays -assume nounderscore -o $1 $1.f90 mpmodule.o mpfuna.o mpfunf.o mpfungq1.o mpfunhq1.o \
+  mpinterface.o second.o -lmpfr -L/usr/local/lib

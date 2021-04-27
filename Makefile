@@ -11,27 +11,33 @@ include Makefile.in
 #****************************************************************************
 # Don't edit below this line
 #****************************************************************************
-CPP            = $(CPP_$(COMPILER))
-FC             = $(FC_$(COMPILER))
-CC             = $(CC_$(COMPILER))
-FFLAGS         = $(FFLAGS_$(COMPILER))
-TARGET_ARCH    = $(TARGET_$(COMPILER))
+CPP         := $(CPP_$(COMPILER))
+FC          := $(FC_$(COMPILER))
+CC          := $(CC_$(COMPILER))
+FFLAGS      := $(FFLAGS_$(COMPILER))
+TARGET_ARCH := $(TARGET_$(COMPILER))
 
 # OpenMP-MPI  hybdridization
-DO_HYBRIDyes   = $($(COMPILER)_OMP)
-DO_HYBRIDno    =
-LOPENMP        = $(DO_HYBRID$(OPENMP))
+DO_HYBRIDyes:= $($(COMPILER)_OMP)
+DO_HYBRIDno :=
+LOPENMP     := $(DO_HYBRID$(OPENMP))
 
-BLENDyes = -DBLEND_
-BLENDno  =
+BLENDyes:= -DBLEND_
+BLENDno :=
 
-MPFUNDEP_fort  = 
-MPFUNDEP_mpfr  = contrib/mpfun_mpfr/mpfr/build/lib/libmpfr.a
-MPFUNDEP_mpfr += $(MPFUNDER_mpfr) contrib/mpfun_mpfr/gmp/build/lib/libgmp.a
+GMP_BUILD_DIR :=contrib/gmp/build
+MPFR_BUILD_DIR:=contrib/mpfr/build
 
-MPFUNDEP       = $(MPFUNDEP_$(MPFUN_VERSION))
+MPFUN_LINK_DEPS_fort:= 
+MPFUN_LINK_DEPS_mpfr:= $(MPFR_BUILD_DIR)/lib/libmpfr.a
+MPFUN_LINK_DEPS_mpfr:= $(MPFUN_LINK_DEPS_mpfr) $(GMP_BUILD_DIR)/lib/libgmp.a
+MPFUN_LINK_DEPS     := $(MPFUN_LINK_DEPS_$(MPFUN_VERSION))
 
-export FC COMPILER CC DIGITS
+MPFUN_MAKE   := Makefile-$(MPFUN_VERSION)
+MPFUN_BUILD  := contrib/mpfun/build-$(MPFUN_VERSION)
+MPFUN_INCLUDE:= -I$(MPFUN_BUILD)
+
+export FC CC
 
 all: fc_tables
 
@@ -41,18 +47,19 @@ edit:
 
 fc_tables: mpfun edit
 	$(FC) $(FFLAGS) $(LOPENMP) mprlinalg_mod.f90 fc_tables.f90 \
-		contrib/mpfun_$(MPFUN_VERSION)/*.o $(MPFUNDEP) \
-		-Icontrib/mpfun_$(MPFUN_VERSION) -o fc_tables
+		$(MPFUN_BUILD)/*.o $(MPFUN_LINK_DEPS)\
+		$(MPFUN_INCLUDE) -o fc_tables
 
 mpfun:
-	$(MAKE) -C contrib/mpfun_$(MPFUN_VERSION)
+	$(MAKE) -C contrib/mpfun -f $(MPFUN_MAKE) COMPILER=$(COMPILER)\
+		DIGITS=$(DIGITS)
 
 test:
 	$(FC) $(FFLAGS) fc_test.f08 -o fc_test
 
 clean:
-	rm -r *.mod fc_tables fc_test
+	rm -f *.mod fc_tables fc_test
 
 distclean:
-	$(MAKE) distclean -C contrib/mpfun_$(MPFUN_VERSION)
-	rm -r *.mod fc_tables fc_tables.f90 fc_test
+	$(MAKE) distclean -C contrib/mpfun -f $(MPFUN_MAKE)
+	rm -f *.mod fc_tables fc_tables.f90 fc_test

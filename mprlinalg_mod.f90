@@ -16,11 +16,31 @@
 
       IMPLICIT NONE
 
-      ! Eigenvalues below eigenmin are treated as zero
-      TYPE(mp_real) :: eigenmin
+      TYPE, PUBLIC :: MPRSVDPLAN
+          TYPE (mp_real), DIMENSION(:,:), ALLOCATABLE :: U,V
+          TYPE (mp_real), DIMENSION(:), ALLOCATABLE   :: sigma
 
-      ! Number of decimal precision digits
-      INTEGER :: DIGS
+          INTEGER, DIMENSION(:,:,:), ALLOCATABLE :: sweep
+
+          TYPE(mp_real) :: eigenmin,eps,gmax
+          INTEGER       :: m,n,digs,steps
+
+          CONTAINS
+             PRIVATE
+             PROCEDURE, PASS(this) :: svd_init_plan,svd_destroy_plan
+             PROCEDURE, PASS(this) :: svd_load_plan,svd_save_plan
+             PROCEDURE, PASS(this) :: svd_iterate,svd_to_svd
+             PROCEDURE             :: svd_output_procedure,svd_input_procedure
+
+             PROCEDURE, PUBLIC  :: init_plan    => svd_init_plan
+             PROCEDURE, PUBLIC  :: destroy_plan => svd_destroy_plan
+             PROCEDURE, PUBLIC  :: save_plan    => svd_save_plan
+             PROCEDURE, PUBLIC  :: load_plan    => svd_load_plan
+             PROCEDURE, PUBLIC  :: iterate      => svd_iterate
+             PROCEDURE, PUBLIC  :: to_svd       => svd_to_svd
+             GENERIC :: WRITE(unformatted)      => svd_output_procedure
+             GENERIC :: READ(unformatted)       => svd_input_procedure
+      END TYPE MPRSVDPLAN
 
       CONTAINS
 
@@ -66,8 +86,7 @@
          ENDDO
       ENDDO
 
-
-
+      RETURN
       END FUNCTION MPRMATVEC
 
 
@@ -115,7 +134,7 @@
       ENDDO
 
 
-
+      RETURN
       END FUNCTION MPRMATMUL
 
 
@@ -151,6 +170,7 @@
          ENDDO
       ENDDO
 
+      RETURN
       END FUNCTION MPRTRANSPOSE
 
 
@@ -205,7 +225,7 @@
          ENDDO
       ENDDO
 
-
+      RETURN
       END FUNCTION MPRSOLVEU
 
 
@@ -280,27 +300,241 @@
          Q(:,k) = (/( Q(i,k)*(1/R(k,k)), i=1,n )/)
       ENDDO
 
+      RETURN
       END SUBROUTINE mprqr
 
+!======================================================================
+      SUBROUTINE svd_init_plan(this,arr,eigenmin,eps)
+!----------------------------------------------------------------------
+!      Initialize a plan to compute a thin SVD decomposition of matrix
+!     `arr` with arbitrary precision, employing a one sided Jacobi
+!     scheme. Note that the transposed of V is computed, that is
+!     A = U*sigma*V^t.
+!     Based on: https://doi.org/10.1137/0906007 and
+!     https://doi.org/10.1137/0910023.
+!
+!     Input:
+!       - arr:       mxn array whose SVD wants to be computed.
+!       - eigenmin:  eigenvalues under `eigenmin` are considered zero.
+!       - eps     :  columns with inner product under eps*gmax are
+!                    considered orthogonal for a given sweep.
+!                    (details on gmax in `svd_iterate`)
+!
+!     Output:
+!       - this: SVD plan
+!
+!      NOTE: The sweeping strategy requires n to be even, which always 
+!     is in the generation of tables for FC-Gram. For other uses, the
+!     sweeping topology must be changed.
+!----------------------------------------------------------------------
+      IMPLICIT NONE
 
-!====================================================================
-      SUBROUTINE mprsvd(A,U,l,V)
-!--------------------------------------------------------------------
-!     Compute thin SVD decomposition of matrix A with arbitrary
-!     precision, employing a one sided Jacobi scheme.
+
+      TYPE (mp_real), DIMENSION(:,:), INTENT(IN) :: arr
+      CLASS(MPRSVDPLAN), INTENT(out)             :: this
+      TYPE(mp_real), OPTIONAL                    :: eigenmin,eps
+
+      INTEGER :: i,j
+      INTEGER :: m,n
+     
+      ! Size
+      m  = UBOUND(arr,1)
+      n  = UBOUND(arr,2)
+      this%m = m
+      this%n = n
+
+      ! Numerical parameters
+      this%steps    = 0
+      this%digs     = mpipl
+      this%eigenmin = mpreal('1.e-50')
+      this%eps      = mpreal('1.e-30')
+      this%gmax     = mpreal('0.0')
+
+      IF( PRESENT(eigenmin) ) this%eigenmin = eigenmin
+      IF( PRESENT(eps) )           this%eps = eps
+
+      ! Plan for the SVD. Pag. 73 of the first paper.
+      ALLOCATE( this%sweep(2,n/2,n-1) )
+      DO i=1,n/2
+        this%sweep(1,i,1) = 2*i-1
+        this%sweep(2,i,1) = 2*i
+      ENDDO
+      DO j=2,n-1
+         this%sweep(1,1,j) = 1
+         this%sweep(1,2,j) = this%sweep(2,1,j-1)
+         DO i=2,n/2-1
+            this%sweep(1,i+1,j) = this%sweep(1,i,j-1)
+            this%sweep(2,i-1,j) = this%sweep(2,i,j-1)
+         ENDDO
+         this%sweep(2,n/2-1,j) = this%sweep(2,n/2,j-1)
+         this%sweep(2,n/2,j)   = this%sweep(1,n/2,j-1)
+      ENDDO
+
+      ! Initialization of SVD
+      ALLOCATE( this%U(m,n), this%sigma(n), this%V(n,n) )
+      this%U     = arr
+      DO j=1,n
+         DO i=1,n
+            IF ( i .eq. j ) THEN
+               this%V(i,j) = mpreal('1.')
+            ELSE
+               this%V(i,j) = mpreal('0.')
+            ENDIF
+         ENDDO
+      ENDDO
+
+      DO i=1,n
+         this%sigma = mpreal('0.')
+      ENDDO
+
+      RETURN
+      END SUBROUTINE svd_init_plan
+
+!======================================================================
+      SUBROUTINE svd_destroy_plan(this)
+!----------------------------------------------------------------------
+!      Destroye an MPRSVD plan. 
+!
+!     Input:
+!       - this: SVD plan instance.
+!----------------------------------------------------------------------
+      IMPLICIT NONE
+
+      CLASS(MPRSVDPLAN), INTENT(INOUT) :: this
+
+      DEALLOCATE(this%sweep)
+      DEALLOCATE(this%sigma)
+      DEALLOCATE(this%U)
+      DEALLOCATE(this%V)
+
+      RETURN
+      END SUBROUTINE svd_destroy_plan
+
+!======================================================================
+      SUBROUTINE svd_output_procedure(this, unit, iostat, iomsg)
+!----------------------------------------------------------------------
+!       Defines the unformatted WRITE method for the derived datatype.
+!----------------------------------------------------------------------
+
+      IMPLICIT NONE
+
+      CLASS(MPRSVDPLAN), INTENT(IN)   :: this
+      INTEGER, INTENT(IN)             :: unit
+      INTEGER, INTENT(OUT)            :: iostat
+      CHARACTER(len=*), INTENT(INOUT) :: iomsg
+
+      WRITE(unit, iostat=iostat, iomsg=iomsg) this%digs
+      WRITE(unit, iostat=iostat, iomsg=iomsg) this%m,this%n,this%steps
+      WRITE(unit, iostat=iostat, iomsg=iomsg) this%eigenmin,this%eps,this%gmax
+      WRITE(unit, iostat=iostat, iomsg=iomsg) this%sweep,this%sigma 
+      WRITE(unit, iostat=iostat, iomsg=iomsg) this%U,this%V
+
+      RETURN
+      END SUBROUTINE svd_output_procedure
+
+!======================================================================
+      SUBROUTINE svd_input_procedure(this, unit, iostat, iomsg)
+!----------------------------------------------------------------------
+!     Defines the unformatted READ method for the derived datatype.
+!----------------------------------------------------------------------
+
+      IMPLICIT NONE
+
+      CLASS(MPRSVDPLAN), INTENT(INOUT) :: this
+      INTEGER, INTENT(IN)              :: unit
+      INTEGER, INTENT(OUT)             :: iostat
+      CHARACTER(len=*), INTENT(INOUT)  :: iomsg
+
+      INTEGER :: m,n
+
+      READ(unit, iostat=iostat, iomsg=iomsg) this%digs
+      IF (this%digs .ne. mpipl ) THEN
+         PRINT*, this%digs, mpipl
+         PRINT*, "Attemped to load SVD plan saved with different "&
+                 "numerical precision (i.e. DIGITS). Aborting..."
+         STOP
+      ENDIF
+
+      READ(unit, iostat=iostat, iomsg=iomsg) this%m,this%n,this%steps
+      READ(unit, iostat=iostat, iomsg=iomsg) this%eigenmin,this%eps,this%gmax
+
+      m = this%m
+      n = this%n
+
+      ALLOCATE( this%sweep(2,n/2,n-1) )
+      ALLOCATE( this%U(m,n), this%sigma(n), this%V(n,n) )
+
+      READ(unit, iostat=iostat, iomsg=iomsg) this%sweep,this%sigma 
+      READ(unit, iostat=iostat, iomsg=iomsg) this%U,this%V
+
+      RETURN
+      END SUBROUTINE svd_input_procedure
+
+
+!======================================================================
+      SUBROUTINE svd_save_plan(this, fname)
+!----------------------------------------------------------------------
+!      Save the current SVD plan to file `fname`.
+!
+!     Input:
+!       - this:  SVD plan instance.
+!       - fname: target filename to save the plan.   
+!----------------------------------------------------------------------
+      IMPLICIT NONE
+
+      CLASS(MPRSVDPLAN), INTENT(IN) :: this
+      CHARACTER(len=*),  INTENT(IN) :: fname
+
+      OPEN(10, FILE=fname, FORM='unformatted', ACCESS='stream')
+         WRITE(10) this
+      CLOSE(10)
+   
+      RETURN
+      END SUBROUTINE svd_save_plan
+
+!======================================================================
+      SUBROUTINE svd_load_plan(this, fname)
+!----------------------------------------------------------------------
+!      Load an SVD plan from file `fname`.
+!
+!     Input:
+!       - this:  SVD plan instance.
+!       - fname: target filename to save the plan.   
+!----------------------------------------------------------------------
+      IMPLICIT NONE
+
+      CLASS(MPRSVDPLAN), INTENT(OUT) :: this
+      CHARACTER(len=*),  INTENT(IN)  :: fname
+
+      OPEN(10, FILE=fname, FORM='unformatted', ACCESS='stream')
+         READ(10) this
+      CLOSE(10)
+   
+      RETURN
+      END SUBROUTINE svd_load_plan
+
+!======================================================================
+      SUBROUTINE svd_iterate(this,iters)
+!----------------------------------------------------------------------
+!      Compute the first part of a thin SVD decomposition for a matrix
+!     with arbitrary precision, employing a one sided Jacobi scheme.
+!     The target matrix A is defined on the call to `plan_init` as well
+!     as other relevant parameters. Note that the transposed of V is
+!     computed and that this subroutine iterates only the A = U'*V^t
+!     decomposition. When the desired level of orthogonality is
+!     achieved, A = U*sigma*V can be found calling `to_svd`.
 !     Based on: https://doi.org/10.1137/0906007 and
 !     https://doi.org/10.1137/0910023
 !
 !     Input:
-!           - A: matrix of mp_real type. A has dimensions mxn.
+!       - this:  SVD plan instance.
+!       - iters: Number of iterations to perform.  
 !
 !     Output:
-!           - U: mxn matrix containing left eigenvectors of A,
-!                of type mp_real.
-!           - s: n-vector containing the singular values of A, of
-!                type mp_real.
-!           - V: nxn matrix containing right side eigenvectors of A,
-!                of type mp_real.
+!       - plan%U: mxn matrix containing left eigenvectors and singular
+!                 values of the target matrix.
+!       - plan%V: nxn matrix containing right side eigenvectors of
+!                 the target matrix.
 !     
 !      Note: The sweeping strategy requires n to be even, which 
 !      always is in the generation of tables for FC-Gram.
@@ -309,92 +543,58 @@
 
       IMPLICIT NONE
 
-      TYPE (mp_real), DIMENSION(:,:), INTENT(IN) :: A 
-      TYPE (mp_real), DIMENSION(UBOUND(A,1),UBOUND(A,2)), INTENT(OUT) :: U
-      TYPE (mp_real), DIMENSION(UBOUND(A,2),UBOUND(A,2)), INTENT(OUT) :: V
-      TYPE (mp_real), DIMENSION(UBOUND(A,2)), INTENT(OUT) :: l
+      CLASS(MPRSVDPLAN), INTENT(INOUT) :: this
+      INTEGER, INTENT(IN)              :: iters
 
-      INTEGER, DIMENSION(2,UBOUND(A,2)/2,UBOUND(A,2)-1) :: sweep
-
-
-      TYPE (mp_real) :: c,s,t,alpha,beta,gama
-      TYPE (mp_real) :: tol,eps,gmax,jgmax,igmax
-      TYPE (mp_real) :: mins,tmp,tmp2
+      TYPE(mp_real) :: c,s,t
+      TYPE(mp_real) :: alpha,beta,gama
+      TYPE(mp_real) :: jgmax,igmax
+      TYPE(mp_real) :: tmp
 
       INTEGER :: m,n
       INTEGER :: i,j,k,ii,jj
-      INTEGER :: iter,stopp,istopp
+      INTEGER :: start
+      INTEGER :: clock_start,clock_end,clock_rate
 
-      ! Columns with inner product below eps*gmax
-      ! are treated as orthogonal for the current sweep.
-      eps = mpreal('1.e-30')
-      gmax = mpreal('0.')  ! 1st sweep uses all columns
+      m = UBOUND(this%U,1)
+      n = UBOUND(this%U,2)
 
-      m = UBOUND(A,1)
-      n = UBOUND(A,2)
+      start = this%steps
 
+      CALL system_clock(clock_start,clock_rate)
+      clock_end = clock_start
 
-      ! Plan for the SVD. Pag. 73 of the first paper.
-      DO i=1,n/2
-        sweep(1,i,1) = 2*i-1
-        sweep(2,i,1) = 2*i
-      ENDDO
-      DO j=2,n-1
-         sweep(1,1,j) = 1
-         sweep(1,2,j) = sweep(2,1,j-1)
-         DO i=2,n/2-1
-            sweep(1,i+1,j) = sweep(1,i,j-1)
-            sweep(2,i-1,j) = sweep(2,i,j-1)
-         ENDDO
-         sweep(2,n/2-1,j) = sweep(2,n/2,j-1)
-         sweep(2,n/2,j) = sweep(1,n/2,j-1)
-      ENDDO
+      ! Start iterating
+      DO WHILE ( this%steps .lt. start+iters )
 
-      ! Initialization
-      U = A
-      DO j=1,n
-         DO i=1,n
-            IF ( i .eq. j ) THEN
-               V(i,j) = mpreal('1.')
-            ELSE
-               V(i,j) = mpreal('0.')
-            ENDIF
-         ENDDO
-      ENDDO
-
-
-
-      ! Start sweeping. Maximum number of sweeps is detemined
-      ! ad-hoc according to precision level. This isn't optimal
-      ! but probably okay for the reasonable values of precision
-      ! to be used.
-!      DO iter=1,DIGS*25/35+50
-      DO iter=1,200
+      ! Speed is averaged only on the current "batch" of iterations
+100   FORMAT( a , 'SVD Sweep : ',i3,' of ',i3, ' (rate: ', f0.2, ' s/iter)')
+      WRITE(*,100,advance="no") ACHAR(13), this%steps+1, start+iters, &
+            dble(clock_end-clock_start)/((this%steps-start)*clock_rate)
 
       igmax = mpreal('0.')
-
-100   FORMAT( a , 'SVD Sweep : ',i3,' out of a total of ',i3)
-!      WRITE(*,100,advance="no") ACHAR(13), iter, DIGS*25/35+50
-      WRITE(*,100,advance="no") ACHAR(13), iter, 200
-
+      ! Start sweeping
       DO ii=1,n-1
          jgmax = mpreal('0.')
 !$omp parallel do private(i,j,k,alpha,beta,gama,tmp,c,s,t)
          DO jj=1,n/2
-            i = sweep(1,jj,ii)
-            j = sweep(2,jj,ii)
+            i = this%sweep(1,jj,ii)
+            j = this%sweep(2,jj,ii)
 
             alpha = mpreal('0.')
-            beta = mpreal('0.')
-            gama = mpreal('0.')
+            beta  = mpreal('0.')
+            gama  = mpreal('0.')
    
             ! Solve rotation coefficients
             DO k=1,m
-               alpha = alpha + U(k,i)**2
-               beta = beta + U(k,j)**2
-               gama = gama + U(k,i)*U(k,j)
+               alpha = alpha + this%U(k,i)**2
+               beta  = beta  + this%U(k,j)**2
+               gama  = gama  + this%U(k,i)*this%U(k,j)
             ENDDO
-            IF ( ABS(gama) .le. eps*gmax ) THEN
+
+            ! Columns with inner product below eps*gmax
+            ! are treated as orthogonal for the current sweep.
+            IF ( ABS(gama) .le. this%eps*this%gmax ) THEN
                tmp = mpreal('0.')
                t = mpreal('0.')
             ELSE
@@ -406,14 +606,14 @@
 
             ! Update arrays
             DO k=1,m
-               tmp = U(k,i)
-               U(k,i) = c*tmp - s*U(k,j)
-               U(k,j) = s*tmp + c*U(k,j)
+               tmp = this%U(k,i)
+               this%U(k,i) = c*tmp - s*this%U(k,j)
+               this%U(k,j) = s*tmp + c*this%U(k,j)
             ENDDO
             DO k=1,n
-               tmp = V(k,i)
-               V(k,i) = c*tmp - s*V(k,j)
-               V(k,j) = s*tmp + c*V(k,j)
+               tmp = this%V(k,i)
+               this%V(k,i) = c*tmp - s*this%V(k,j)
+               this%V(k,j) = s*tmp + c*this%V(k,j)
             ENDDO
 ! Manual max reduction because OpenMP max reduction doesn't handle
 ! mpfun types.
@@ -423,61 +623,96 @@
          ENDDO
          igmax = MAX(igmax,jgmax)
       ENDDO
-      gmax = igmax
-      ENDDO ! End sweep
 
-      ! Compute spectrum
+      this%gmax = igmax
+      CALL system_clock(clock_end)
+
+      this%steps = this%steps+1
+      ENDDO ! End of iteration
+
+      RETURN
+      END SUBROUTINE svd_iterate
+
+
+!======================================================================
+      SUBROUTINE svd_to_svd(this)
+!----------------------------------------------------------------------
+!      Computes the singular values and stores them in the vector sigma
+!     while at the same time normalizing U. After calling this
+!     procedure, one has A = U*sigma*V^t (i.e. the SVD decomposition).
+!
+!     Input:
+!       - this:  SVD plan instance.
+!
+!     Output:
+!       - this: SVD plan where ||U|| = 1 and sigma is now populated.
+!--------------------------------------------------------------------
+
+      IMPLICIT NONE
+
+      CLASS(MPRSVDPLAN), INTENT(INOUT) :: this
+      TYPE(mp_real) :: tmp
+
+      INTEGER :: m,n
+      INTEGER :: i,k
+
+      m = UBOUND(this%U,1)
+      n = UBOUND(this%U,2)
+
 !$omp parallel do private(tmp,k)
       DO i=1,n
          tmp = mpreal('0.')
          DO k=1,m
-            tmp = tmp + U(k,i)*U(k,i)
+            tmp = tmp + this%U(k,i)*this%U(k,i)
          ENDDO
          ! If actual eigenvalue, add it and normalize
          ! otherwise set to zero
-         IF ( SQRT(tmp) >= eigenmin ) THEN
-            l(i) = SQRT(tmp)
-            U(:, i) = (/( U(k,i)/l(i), k=1,m )/)
+         IF ( SQRT(tmp) .ge. this%eigenmin ) THEN
+            this%sigma(i) = SQRT(tmp)
+            this%U(:, i)  = (/( this%U(k,i)/this%sigma(i), k=1,m )/)
          ELSE
-            l(i) = mpreal('0.')
-            U(:, i) = (/( mpreal('0.'), k=1,m )/)
+            this%sigma(i) = mpreal('0.')
+            this%U(:, i)  = (/( mpreal('0.'), k=1,m )/)
          ENDIF
       ENDDO
 
-
-      ! Check orthogonality of U
-      tmp2 = mpreal('0.')
-      DO i=1,n
-      DO j=i+1,n
-        tmp = mpreal('0.')
-        DO k=1,m
-           tmp = tmp + U(k,i)*U(k,j)
-        ENDDO
-        IF ( tmp > tmp2) THEN
-        tmp2 = max(tmp2,tmp)
-        ii = i
-        jj = j
-        ENDIF
-      ENDDO
-      ENDDO
-      PRINT*,
-      PRINT*, 'Max. inner product between columns of U: ', DBLE(tmp2)
-
-      ! Check orthogonality of V
-      tmp2 = mpreal('0.')
-      DO i=1,n
-        DO j=i+1,n
-        tmp = mpreal('0.')
-        DO k=1,n
-           tmp = tmp + V(k,i)*V(k,j)
-        ENDDO
-        tmp2 = max(tmp2,tmp)
-      ENDDO
-      ENDDO
-      PRINT*, 'Max. inner product between columns of V: ', DBLE(tmp2)
+      RETURN
+      END SUBROUTINE svd_to_svd
 
 
-      END SUBROUTINE mprsvd
+!=====================================================================
+      FUNCTION check_orthogonal(arr) RESULT(maxin)
+!---------------------------------------------------------------------
+!     Checks orthogonality between columns of MPREAL arrays.
+!
+!     Input:
+!       - arr:  mpreal array.
+!
+!     Output:
+!       - maxin: maximum inner product (mpreal).
+!
+!--------------------------------------------------------------------
+      IMPLICIT NONE
+
+      TYPE(mp_real), DIMENSION(:,:), INTENT(IN) :: arr
+      TYPE(mp_real) :: maxin
+
+      TYPE(mp_real) :: tmp
+      INTEGER :: i,j,k
+
+      maxin = mpreal('0.')
+      DO i=1,UBOUND(arr,2)
+      DO j=i+1,UBOUND(arr,2)
+         tmp = mpreal('0.')
+         DO k=1,UBOUND(arr,1)
+            tmp = tmp + arr(k,i)*arr(k,j)
+         ENDDO
+         maxin = max(maxin,tmp)
+      ENDDO
+      ENDDO
+
+      RETURN
+      END FUNCTION check_orthogonal
 
 
       END MODULE mprlinalg

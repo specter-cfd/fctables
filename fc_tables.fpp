@@ -36,22 +36,24 @@
    
       ! Vandermonde matrices, QR decomposition matrices,
       ! Trigonometric polynomial matrices and SVD matrices.
-      TYPE (mp_real), DIMENSION(:,:), ALLOCATABLE :: P,Q,R
-      TYPE (mp_real), DIMENSION(:,:), ALLOCATABLE :: Qder,Rder
-      TYPE (mp_real), DIMENSION(:,:), ALLOCATABLE :: oP,oQ
-      TYPE (mp_real), DIMENSION(:,:), ALLOCATABLE :: T1,T2,A
-      TYPE (mp_real), DIMENSION(:,:), ALLOCATABLE :: U,V
+      TYPE(mp_real), DIMENSION(:,:), ALLOCATABLE :: P,Q,R
+      TYPE(mp_real), DIMENSION(:,:), ALLOCATABLE :: Qder,Rder
+#ifdef BLEND_
+      TYPE(mp_real), DIMENSION(:,:), ALLOCATABLE :: oP,oQ
+      TYPE(mp_real), DIMENSION(:,:), ALLOCATABLE :: T1,T2,T3,A
+#endif
 
       ! Double precision versions of Q and A (OUTPUT)
       DOUBLE PRECISION, DIMENSION(:,:), ALLOCATABLE :: Qd,Ad
 
       ! Spectra, coarse grids, oversampled grids, wavenumbers
       ! and temporal variables for solving the linear system.
-      TYPE (mp_real), DIMENSION(:), ALLOCATABLE :: s
-      TYPE (mp_real), DIMENSION(:), ALLOCATABLE :: grid_n,grid_d,grid_z
-      TYPE (mp_real), DIMENSION(:), ALLOCATABLE :: ogrid_d,ogrid_z
-      TYPE (mp_real), DIMENSION(:), ALLOCATABLE :: wn
-      TYPE (mp_real), DIMENSION(:), ALLOCATABLE :: x,b
+      TYPE(mp_real), DIMENSION(:), ALLOCATABLE :: grid_n,grid_d
+#ifdef BLEND_
+      TYPE(mp_real), DIMENSION(:), ALLOCATABLE :: ogrid_d,ogrid_z
+      TYPE(mp_real), DIMENSION(:), ALLOCATABLE :: grid_z,wn
+      TYPE(mp_real), DIMENSION(:), ALLOCATABLE :: x,b
+#endif
 
       ! Parameters and auxiliary variables
       TYPE (mp_real)   :: L
@@ -61,9 +63,14 @@
       INTEGER :: o,od,oc,oz,on
       INTEGER :: bw,nwn
       INTEGER :: i,j,k
-      INTEGER :: neum
+      INTEGER :: tkind
 
-!$    INTEGER :: nth
+#ifdef BLEND_
+      TYPE(MPRSVDPLAN) :: plansvd
+      INTEGER :: resume,sstep,iters
+#endif
+
+      INTEGER :: nth
 !$    INTEGER, EXTERNAL :: OMP_GET_MAX_THREADS
 
       CHARACTER (LEN=100) :: odir
@@ -71,31 +78,53 @@
       CHARACTER (LEN=5)   :: cs,ds
 
       ! Namelists for parameters
-      NAMELIST / required / odir,d,c,neum
-      NAMELIST / option / z,o,bw,e
+      NAMELIST / required / odir,d,c,tkind
+      NAMELIST / option   / z,o,bw,e
+#ifdef BLEND_
+      NAMELIST / svd      / resume,sstep,iters
+#endif
 
-      DIGS = _DIGITS
-      eigenmin = mpreal('1.e-50')
+#ifdef BLEND_
+      z=0; o=0; bw=0; e=0
+      resume=0; iters=0; sstep=0
+#endif
 
       OPEN(1,file='parameter.inp',status='unknown',form="formatted")
          READ(1,NML=required)
+#ifdef BLEND_
+         READ(1,NML=svd)
          READ(1,NML=option)
+#endif
       CLOSE(1)
+
+#ifdef BLEND_
+      ! Fill optional parameters if not defined.
+      IF ( o  .le. 0 )  o  = 20
+      IF ( bw .le. 0 )  bw = 4 
+      IF ( z  .le. 0 )  z  = int(0.5*c)
+      IF ( e  .le. 0 )  e  = c
+
+      IF ( iters .le. 0 )  iters = 200
+      IF ( sstep .le. 0 )  sstep = iters+1
+#endif
+
 
       ! Construct strings with the resolutions (for saving)
       WRITE(cs,'(I5)') c
       WRITE(ds,'(I5)') d
 
-      ! Fill optional parameters if not defined.
-      IF ( z  .eq. 0 )  z  = int(0.5*c)
-      IF ( o  .eq. 0 )  o  = 20
-      IF ( bw .eq. 0 )  bw = 4 
-      IF ( e  .eq. 0 )  e  = c
 
-      nth = OMP_GET_MAX_THREADS()
-
-      PRINT*, "Running in ", nth, " cores with ", DIGS, "digits of precision."
-      PRINT*, "z=", z, ", o=", o, ", bw=", bw, ", e=", e
+      nth = 1
+!$      nth = OMP_GET_MAX_THREADS()
+200   FORMAT( "Obtaining operators for ", i0, " matching points and ", &
+              i0, " continuation points") 
+      WRITE(*,200) C, d
+201   FORMAT( "Running in ", i0, " cores with ", i0, " digits of precision") 
+      WRITE(*,201) nth, mpipl 
+#ifdef BLEND_
+202   FORMAT( "z = ", i0, ", o = ", i0, ", bw = ", i0, ", e = ", i0) 
+      WRITE(*,202) z, o, bw, e
+#endif
 
       ! Assign derived parameters
       n = d+c+z+e
@@ -117,11 +146,10 @@
       ALLOCATE( grid_n(n), grid_d(d))
 #ifdef BLEND_
       ALLOCATE( oP(od,d), oQ(od,d) )
-      ALLOCATE( s(2*nwn), grid_z(z) )
-      ALLOCATE( T1(od+oz,2*nwn), U(od+oz,2*nwn), V(2*nwn,2*nwn) )
-      ALLOCATE( T2(c,2*nwn), A(c,d) )
+      ALLOCATE( T1(od+oz,2*nwn), T2(od+oz,2*nwn) )
+      ALLOCATE( T3(c,2*nwn), A(c,d) )
       ALLOCATE( ogrid_d(od), ogrid_z(oz) )
-      ALLOCATE( wn(nwn) )
+      ALLOCATE( grid_z(z), wn(nwn) )
       ALLOCATE( x(2*nwn), b(od+oz) )
 #endif
 
@@ -170,7 +198,7 @@
       ! ---------------------
       ! Dirichlet Projector
       ! ---------------------
-      IF ( neum .eq. 0 ) THEN
+      IF ( tkind .eq. 0 ) THEN
          ! Convert to DOUBLE and save
          DO j=1,d
             DO i=1,d
@@ -186,7 +214,7 @@
       !---------------------
       ! Neumann Projector
       !---------------------
-      ELSEIF ( neum .eq. 1 ) THEN
+      ELSEIF ( tkind .eq. 1 ) THEN
          ! Modified Vandermonde matrix
          DO j=1,d
                P(d,j) = (j-1)*grid_d(d)**(j-2)
@@ -227,7 +255,7 @@
       !---------------------
       ! Neumann^2 Projector
       !---------------------
-      ELSE IF ( neum .eq. 2 ) THEN
+      ELSE IF ( tkind .eq. 2 ) THEN
          ! Modified Vandermonde matrix
          DO j=1,d
                P(d,j) = (j-2)*(j-1)*grid_d(d)**(j-3)
@@ -268,7 +296,7 @@
       !---------------------
       ! Robin Projector
       !---------------------
-      ELSE IF ( neum .eq. 3 ) THEN  !Robin
+      ELSE IF ( tkind .eq. 3 ) THEN  !Robin
          ! Modified Vandermonde matrix
          DO j=1,d
                P(d,j) = (j-1)*grid_d(d)**(j-2) + mpreal('1.0')*grid_d(d)**(j-1)
@@ -311,34 +339,90 @@
       !-------------------------------
       ! Blend-to-zero Operator
       !-------------------------------
-      IF ( neum .eq. 0 ) THEN
+      IF ( tkind .eq. 0 ) THEN
          ! Use R to "interpolate" Q in the finer grid.
          oQ = MPRSOLVEU(R,oP)
-   
-   
+
          ! Construct generic trigonometric polynomial in [0, 1) domain
          ! over oversampled matching and zero grids.
          DO j = 1,nwn
             DO i=1,od
-               T1(i,j) = cos(2*mppi()*ogrid_d(i)*wn(j))
+               T1(i,j)     = cos(2*mppi()*ogrid_d(i)*wn(j))
                T1(i,j+nwn) = sin(2*mppi()*ogrid_d(i)*wn(j))
             ENDDO
             DO i=1,oz
-               T1(od+i,j) = cos(2*mppi()*ogrid_z(i)*wn(j))
+               T1(od+i,j)     = cos(2*mppi()*ogrid_z(i)*wn(j))
                T1(od+i,j+nwn) = sin(2*mppi()*ogrid_z(i)*wn(j))
             ENDDO
          ENDDO
+
+         IF ( resume .eq. 0) THEN
+            CALL plansvd%init_plan(T1)
+         ELSEIF ( resume .eq. 1 ) THEN
+            CALL plansvd%load_plan('svd_temp.dat')
+         ENDIF
    
-         ! Get SVD decomposition of T1
-         CALL mprsvd(T1,U,s,V)
+         ! Get orthogonal decomposition of T1
+         IF ( plansvd%steps .lt. iters ) THEN
+400         FORMAT( "Performing U*V^t decomposition (size: ", i0, "x", i0, ")") 
+            WRITE(*,400) UBOUND(T1,1), UBOUND(T1,2) 
+         ENDIF
+         DO WHILE (plansvd%steps .lt. iters)
+            CALL plansvd%iterate(min(sstep,iters))
+
+            ! Check orthogonality 
+            mprmp = check_orthogonal(plansvd%U)
+            PRINT*,
+            PRINT*, ACHAR(13), 'Max. inner product between columns of U: ',&
+                    DBLE(mprmp)
+            mprmp = check_orthogonal(plansvd%V)
+            PRINT*, ACHAR(13), 'Max. inner product between columns of V: ',&
+                    DBLE(mprmp)
    
-   
+            ! Check decomposition is accurate
+            T2 = MPRMATMUL(plansvd%U, MPRTRANSPOSE(plansvd%V))
+            mprmp = mpreal('0.')
+            DO j=1,UBOUND(T2,2)
+            DO i=1,UBOUND(T2,1)
+               mprmp = max(mprmp,abs(T1(i,j) - T2(i,j)))
+            ENDDO
+            ENDDO
+            PRINT*, ACHAR(13), 'Error in U*V^t decomposition: ', DBLE(mprmp)
+            PRINT*,
+
+            IF ( sstep .le. iters ) CALL plansvd%save_plan('svd_temp.dat')
+         ENDDO
+
+         ! Get SVD of T1 and check it
+         CALL plansvd%to_svd()
+
+         DO j=1,UBOUND(plansvd%V,2)
+         DO i=1,UBOUND(T2,1)
+            mprmp = mpreal('0.')
+            DO k=1,UBOUND(plansvd%V,1)
+               mprmp = mprmp + plansvd%U(i,k)*plansvd%sigma(k) * plansvd%V(j,k)
+            ENDDO
+            T2(i,j) = mprmp
+         ENDDO
+         ENDDO
+
+         mprmp = mpreal('0.')
+         DO j=1,UBOUND(T2,2)
+         DO i=1,UBOUND(T2,1)
+            mprmp = max(mprmp,abs(T1(i,j) - T2(i,j)))
+         ENDDO
+         ENDDO
+         PRINT*, 'Error in SVD decomposition: ', DBLE(mprmp)
+         PRINT*,
+
+
+         ! Finally, solve the required system of equations! 
          ! Construct generic trigonometric polynomial in [0,1) domain
          ! over the continuation points
          DO j = 1,nwn
             DO i=1,C
-               T2(i,j) = cos(2*mppi()*grid_n(d+i)*wn(j))
-               T2(i,j+nwn) = sin(2*mppi()*grid_n(d+i)*wn(j))
+               T3(i,j)     = cos(2*mppi()*grid_n(d+i)*wn(j))
+               T3(i,j+nwn) = sin(2*mppi()*grid_n(d+i)*wn(j))
             ENDDO
          ENDDO
    
@@ -350,18 +434,20 @@
             b(od+1:od+oz) = (/( mpreal('0.'), k=1,oz )/)
    
             ! Compute D*V^t*x
-            x = MPRMATVEC(MPRTRANSPOSE(U), b)
+            x = MPRMATVEC(MPRTRANSPOSE(plansvd%U), b)
    
-            ! Compute V^t*x. (i.e. divide x_i by s_i)
+            ! Compute V^t*x. (i.e. divide x_i by sigma_i)
             DO j = 1,2*nwn
-               IF ( s(j) >= eigenmin ) x(j) = x(j)/s(j)
+               IF ( plansvd%sigma(j) >= plansvd%eigenmin ) THEN
+                   x(j) = x(j)/plansvd%sigma(j)
+               ENDIF
             ENDDO
    
             ! Compute x
-            x = MPRMATVEC(V, x)
+            x = MPRMATVEC(plansvd%V, x)
    
             ! Get continuation coefficients
-            A(:,i) = MPRMATVEC(T2, x)
+            A(:,i) = MPRMATVEC(T3, x)
          ENDDO
    
    
@@ -389,12 +475,53 @@
       DEALLOCATE( grid_n, grid_d)
 #ifdef BLEND_
       DEALLOCATE( oP, oQ )
-      DEALLOCATE( T1, U, V )
-      DEALLOCATE( T2, A )
-      DEALLOCATE( s, grid_z )
+      DEALLOCATE( T1, T2, T3, A )
       DEALLOCATE( ogrid_d, ogrid_z )
-      DEALLOCATE( wn )
+      DEALLOCATE( grid_z, wn )
       DEALLOCATE( x, b )
+      CALL plansvd%destroy_plan()
 #endif
 
       END PROGRAM FCTABLES
+
+
+
+
+!            PRINT*, "m", plansvd%m, plansvd2%m
+!            PRINT*, "n", plansvd%n, plansvd2%n
+!            PRINT*, "digs", plansvd%digs, plansvd2%digs
+!            PRINT*, "step", plansvd%step, plansvd2%step
+!
+!            PRINT*, "eigenmin", dble(plansvd%eigenmin), dble(plansvd2%eigenmin)
+!            PRINT*, "eps", dble(plansvd%eps), dble(plansvd2%eps)
+!            PRINT*, "gmax", dble(plansvd%gmax), dble(plansvd2%gmax)
+!
+!            PRINT*, dble(plansvd%sweep(1,od/2,od/2)), dble(plansvd2%sweep(1,od/2,od/2))
+!            PRINT*, dble(plansvd%sweep(2,od/2,od/2)), dble(plansvd2%sweep(2,od/2,od/2))
+!            PRINT*, "sweep", MAXVAL(ABS(plansvd%sweep - plansvd%sweep))
+!
+!            PRINT*, dble(plansvd%U(od/2,nwn)), dble(plansvd2%U(od/2,nwn))
+!            mprmp = mpreal('0.')
+!            DO j=1,2*nwn
+!            DO i=1,od
+!               mprmp = max(mprmp, abs(plansvd%U(i,j)-plansvd2%U(i,j)))
+!            ENDDO
+!            ENDDO
+!            PRINT*, "U", DBLE(mprmp)
+!
+!            PRINT*, dble(plansvd%sigma(nwn)), dble(plansvd2%sigma(nwn))
+!            mprmp = mpreal('0.')
+!            DO i=1,2*nwn
+!               mprmp = max(mprmp, abs(plansvd%sigma(i)-plansvd2%sigma(i)))
+!            ENDDO
+!            PRINT*, "sigma", DBLE(mprmp)
+!
+!            PRINT*, dble(plansvd%V(nwn,nwn)), dble(plansvd2%V(nwn,nwn))
+!            mprmp = mpreal('0.')
+!            DO j=1,2*nwn
+!            DO i=1,2*nwn
+!               mprmp = max(mprmp, abs(plansvd%V(i,j)-plansvd2%V(i,j)))
+!            ENDDO
+!            ENDDO
+!            PRINT*, "V", DBLE(mprmp)
+

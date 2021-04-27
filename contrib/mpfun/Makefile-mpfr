@@ -1,0 +1,129 @@
+# Compiler options. For now GNU is hardcoded
+# Asumes includes are appended with -I
+# Start with hack because Make defaults FC to f77
+ifeq ($(FC),f77)
+FC         := gfortran
+else
+FC         := $(if $(FC),$(FC),gfortran)
+endif
+CC         := $(if $(CC),$(CC),gcc)
+COMPILER   := $(if $(COMPILER),$(COMPILER),GNU)
+MODFLAG_GNU:= -J
+FFLAGS_GNU := -O3 -fno-underscoring
+
+# GNUCORES: Cores to use compiling MPFR and GMP
+# MPFRTUNE: `yes` to tune MPFR for speed (takes longer
+# to compile the first time), `no` to use default tuning
+GNUCORES   := 4
+MPFRTUNE   := yes
+
+# Variant of the library to use and support for quads
+# (provided the compiler supports them)
+# VARIANT = 1 or 2
+# QUAD    = `yes` or `no`
+# Run `make -f Makefile-fort clean` after changing
+DIGITS  := $(if $(DIGITS),$(DIGITS),512)
+VARIANT := 1
+QUAD    := no
+
+QUAD_yes:= q
+QUAD_no := 
+
+# Directories
+SOURCEDIR   := mpfun-mpfr/fortran
+BUILDDIR    := build-mpfr
+GMPDIR      :=$(shell pwd)/../gmp
+GMPBUILDDIR :=$(GMPDIR)/build
+MPFRDIR     :=$(shell pwd)/../mpfr
+MPFRBUILDDIR:=$(MPFRDIR)/build
+
+# Final compiler flags
+MODFLAG:= $(MODFLAG_$(COMPILER))$(BUILDDIR)
+FFLAGS := $(FFLAGS_$(COMPILER)) -I$(BUILDDIR) $(MODFLAG)
+CFLAGS += -I$(MPFRBUILDDIR)/include -I$(GMPBUILDDIR)/include
+
+# General, variant-dependant and quad-dependant sources
+GENSOURCES:= mpfuna.f90 mpfunf.f90 second.f90 mpinterface.c
+VARSOURCES:= mpfungquad$(VARIANT).f90 mpfunhquad$(VARIANT).f90
+
+# Sources to compile and objects to build
+LOCSOURCES:= $(sort $(subst quad,$(QUAD_$(QUAD)),$(VARSOURCES)) $(GENSOURCES))
+SOURCES   := $(patsubst %,$(SOURCEDIR)/%,$(LOCSOURCES))
+OBJECTS   := $(patsubst $(SOURCEDIR)/%.f90,$(BUILDDIR)/%.o,$(SOURCES)) 
+OBJECTS   := $(patsubst $(SOURCEDIR)%.c,$(BUILDDIR)%.o,$(OBJECTS))
+
+DEPENDANT :=$(subst quad,$(QUAD_$(QUAD)),$(VARSOURCES))
+DEPSOURCES:=$(patsubst %,$(SOURCEDIR)/%,$(DEPENDANT))
+DEPOBJECTS:=$(patsubst $(SOURCEDIR)/%.f90,$(BUILDDIR)/%.o,$(DEPSOURCES)) 
+
+MPFRTUNE_yes := --with-gmp-build=$(GMPDIR) --enable-gmp-internals
+MPFRTUNE_no  := -with-gmp=$(GMPBUILDDIR)
+
+#REGEX to get precision
+CURRDIGS:= $(shell grep "mpipl =" $(SOURCEDIR)/mpfunf.f90 | \
+		            sed -e 's/..* = \([0-9].*\),..*/\1/')
+REGEX:= "s/\(..* (mpipl = \)[0-9].*\(, ..*\)/\1$(DIGITS)\2/"
+
+all: dir gmp mpfr updatedigits $(BUILDDIR)/mpmodule.o
+
+dir:
+	mkdir -p $(BUILDDIR)
+
+$(BUILDDIR)/mpmodule.o: $(OBJECTS)
+	$(FC) $(FFLAGS) -c $(SOURCEDIR)/mpmodule.f90 -o $@
+
+$(BUILDDIR)/%.o: $(SOURCEDIR)/%.f90
+	$(FC) $(FFLAGS) -c $< -o $@
+
+$(BUILDDIR)/%.o: $(SOURCEDIR)/%.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+#VAROBJECTS depend on mpfunf
+$(DEPOBJECTS): $(BUILDDIR)/mpfunf.o
+
+updatedigits:
+	if [ $(CURRDIGS) -ne $(DIGITS) ]; then \
+		sed -i  $(REGEX) $(SOURCEDIR)/mpfunf.f90; \
+	fi
+
+# Point gmp and mpfr at their static libs so that they get rebuilt
+# only after a distclean. Note that a make distclean is run after
+# install because the test folders get quite big otherwise.
+$(GMPBUILDDIR)/lib/libgmp.a :
+	cd $(GMPDIR) && CC=$(CC) ./configure --disable-shared --enable-static\
+		--prefix=$(GMPBUILDDIR)
+	CC=$(CC) $(MAKE) -j $(GNUCORES) -C $(GMPDIR)
+	CC=$(CC) $(MAKE) check -C $(GMPDIR)
+	if [ $(MPFRTUNE) == yes ]; then\
+		CC=$(CC) $(MAKE) speed -C $(GMPDIR)/tune;\
+	fi
+	CC=$(CC) $(MAKE) install -C $(GMPDIR)
+
+$(MPFRBUILDDIR)/lib/libmpfr.a :
+	cd $(MPFRDIR) && CC=$(CC) ./configure --prefix=$(MPFRBUILDDIR) \
+		--enable-thread-safe --disable-shared --enable-static \
+		$(MPFRTUNE_$(MPFRTUNE))
+	if [ $(MPFRTUNE) == yes ]; then\
+		CC=$(CC) $(MAKE) -j $(GNUCORES) speed -C $(MPFRDIR)/tune;\
+	fi
+	CC=$(CC) $(MAKE) -j $(GNUCORES) -C $(MPFRDIR)
+	CC=$(CC) $(MAKE) check -C $(MPFRDIR)
+	CC=$(CC) $(MAKE) install -C $(MPFRDIR)
+	# Remove GMP tests now so I don't delete the tune procedures
+	# before MPFR uses them
+	CC=$(CC) $(MAKE) distclean -C $(GMPDIR)
+	CC=$(CC) $(MAKE) distclean -C $(MPFRDIR)
+
+gmp : $(GMPBUILDDIR)/lib/libgmp.a
+mpfr : $(MPFRBUILDDIR)/lib/libmpfr.a
+
+clean :
+	rm -f $(BUILDDIR)/*.o $(BUILDDIR)/*.mod
+
+cleanlibs:
+	rm -rf $(GMPBUILDDIR)
+	rm -rf $(MPFRBUILDDIR)
+
+distclean: cleanlibs clean
+
+.PHONY : updatedigits

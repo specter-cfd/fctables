@@ -1,3 +1,0 @@
-ifort -fast -assume nounderscore -c mpmodule.f90 mpfuna.f90 mpfunf.f90 mpfung2.f90 secondu.f90
-ifort -fast -assume nounderscore -c mpmodule.f90 mpfuna.f90 mpfunf.f90 mpfung2.f90 secondu.f90
-icc -c mpinterface.c

@@ -1,0 +1,82 @@
+# Compiler options. For now GNU is hardcoded
+# Asumes includes are appended with -I
+# Start with hack because Make defaults FC to f77
+ifeq ($(FC),f77)
+FC         := gfortran
+else
+FC         := $(if $(FC),$(FC),gfortran)
+endif
+COMPILER   := $(if $(COMPILER),$(COMPILER),GNU)
+MODFLAG_GNU:= -J
+FFLAGS_GNU := -O3
+
+# Variant of the library to use and support for quads
+# (provided the compiler supports them)
+# VARIANT = 1 or 2
+# QUAD    = `yes` or `no`
+# Run `make -f Makefile-fort clean` after changing
+DIGITS  := $(if $(DIGITS),$(DIGITS),512)
+VARIANT := 1
+QUAD    := no
+
+QUAD_yes:= q
+QUAD_no := 
+
+# Directories
+SOURCEDIR:= mpfun-fort/fortran
+BUILDDIR := build-fort
+
+# Final compiler flags
+MODFLAG    := $(MODFLAG_$(COMPILER))$(BUILDDIR)
+FFLAGS     := $(FFLAGS_$(COMPILER)) -I$(BUILDDIR) $(MODFLAG)
+
+# General, variant-dependant and quad-dependant sources
+GENSOURCES := mpfuna.f90 mpfunc.f90 mpfund.f90 mpfune.f90 mpfunf.f90 \
+		    	mpmask13.f90 second.f90
+VARSOURCES := mpfungquad$(VARIANT).f90 mpfunhquad$(VARIANT).f90
+QUADSOURCES:= $(VARSOURCES) mpfunbquad.f90
+
+# Sources to compile and objects to build
+LOCSOURCES := $(sort $(subst quad,$(QUAD_$(QUAD)),$(QUADSOURCES)) $(GENSOURCES))
+SOURCES    := $(patsubst %,$(SOURCEDIR)/%,$(LOCSOURCES))
+OBJECTS    := $(patsubst $(SOURCEDIR)/%.f90,$(BUILDDIR)/%.o,$(SOURCES)) 
+
+DEPENDANT  :=$(subst quad,$(QUAD_$(QUAD)),$(VARSOURCES))
+DEPSOURCES :=$(patsubst %,$(SOURCEDIR)/%,$(DEPENDANT))
+DEPOBJECTS :=$(patsubst $(SOURCEDIR)/%.f90,$(BUILDDIR)/%.o,$(DEPSOURCES)) 
+
+
+#REGEX to get precision
+CURRDIGS := $(shell grep "mpipl =" $(SOURCEDIR)/mpfunf.f90 | \
+		            sed -e 's/..* = \([0-9].*\),..*/\1/')
+REGEX := "s/\(..* (mpipl = \)[0-9].*\(, ..*\)/\1$(DIGITS)\2/"
+
+all: dir updatedigits $(BUILDDIR)/mpmodule.o
+
+dir:
+	mkdir -p $(BUILDDIR)
+
+$(BUILDDIR)/mpmodule.o: $(OBJECTS)
+	$(FC) $(FFLAGS) -c $(SOURCEDIR)/mpmodule.f90 -o $@
+
+$(BUILDDIR)/%.o: $(SOURCEDIR)/%.f90
+	$(FC) $(FFLAGS) -c $< -o $@
+
+#VAROBJECTS depend on mpfunf
+$(DEPOBJECTS): $(BUILDDIR)/mpfunf.o
+
+updatedigits:
+	if [ $(CURRDIGS) -ne $(DIGITS) ]; then \
+		sed -i  $(REGEX) $(SOURCEDIR)/mpfunf.f90; \
+	fi
+
+# mpmask requires compilation without optimizations
+mpmask13.o:
+	$(FC) -J$(BUILDDIR) -C $< -o $@
+
+clean:
+	rm -f $(BUILDDIR)/*.o $(BUILDDIR)/*.mod
+
+distclean: clean
+
+.PHONY : updatedigits

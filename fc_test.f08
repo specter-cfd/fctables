@@ -56,22 +56,19 @@
 ! =====================================================================
       USE fft_mod
     
-<<<<<<< HEAD
-      REAL (KIND=REAL64)  , DIMENSION(:,:), ALLOCATABLE  :: Q,A
-=======
       REAL (KIND=wp)  , DIMENSION(:,:), ALLOCATABLE  :: Q,A
->>>>>>> 748e235c7de542155f5c1d0d50fe659a80d21423
 
       COMPLEX(KIND=wp), DIMENSION(:), ALLOCATABLE    :: f
       REAL(KIND=wp)   , DIMENSION(:), ALLOCATABLE    :: fp,x,k
 
-      INTEGER :: i, n, c, d
+      INTEGER :: i, n, c, d, neum
 
       CHARACTER (LEN=100) :: odir  ! Dummy variable
       CHARACTER (LEN=5)   :: cs,ds
    
       ! Total number of points, continuation points, and matching points
-      NAMELIST / required / odir,d,c
+      ! Neum is currently unused
+      NAMELIST / required / odir,d,c,neum
       OPEN(1,file='parameter.inp',status='unknown',form="formatted")
          READ(1,NML=required)
       CLOSE(1)

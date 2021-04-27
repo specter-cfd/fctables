@@ -1,0 +1,2 @@
+gfortran -O3 -o $1 -fno-underscoring $1.f90 mpmodule.o mpfuna.o mpfunf.o mpfungq1.o mpfunhq1.o \
+  mpinterface.o second.o -lmpfr -L/usr/local/lib
