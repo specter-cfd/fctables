@@ -3,7 +3,7 @@
 ----
 FC Tables is a Fortran 2003 program that computes FC-Gram tables.
 
-This program heavily utilizes the [MPFUN2020](https://www.davidhbailey.com/dhbsoftware/) library for arbitrary precision floating point arithmetic. This library comes  in two variants and both are included. The first one, **MPFUN-Fort**, is a pure Fortran implementation, which is straightforward to compile. The second variant, **    MPFUN-MPFR**, depends on the C libraries **GMP** and **MPFR** and, although trickier to compile, delivers about 3x faster performance. It is, however, very simple to   choose which variant of MPFUN should FC Tables try compile.
+This program heavily utilizes the [MPFUN2020](https://www.davidhbailey.com/dhbsoftware/) library for arbitrary precision floating point arithmetic. This library comes  in two variants and both are included. The first one, **MPFUN-Fort**, is a pure Fortran implementation, which is straightforward to compile. The second variant, **   MPFUN-MPFR**, depends on the C libraries **GMP** and **MPFR** and, although trickier to compile, delivers about 3x faster performance. It is, however, very simple to   choose which variant of MPFUN should FC Tables try compile.
 
 FC Tables can also take advantage of multicore processors by utilizing OpenMP to split loops across multiple threads.
 
@@ -17,16 +17,17 @@ More information about the FC-Gram algorithm to perform periodic continuations o
    1. The desired precision in decimal digits, `DIGITS`.
    2. Whether to build support for constructing blend-to-zero operators (`BLEND = yes`) or not (`BLEND = no`).
    3. The `MPFUN` variant, `fort` or `mpfr`.
-   4. Whether OpenMP support should be enables (`OPENMP = yes`) or not (`OPENMP = no`).
+   4. Whether OpenMP support should be enabled (`OPENMP = yes`) or not (`OPENMP = no`).
    5. Compiler family to use. Options are `GNU` for `gfortran` and `INTEL` for `ifort`. Note that building with `ifort` has not been thoroughly tested.
 4. Execute the `make` command.
  
-Note that if `MPFUN = mpfr` is selected, the first compilation can take up to 20/30 minutes, as `mpfr` and `gmp` (it's dependency) have very long compilation times. These libraries are only compiled one time unless `make distclean` is invoked.
+Note that if `MPFUN = mpfr` is selected, the first compilation can take up to 20/30 minutes, as `mpfr` and `gmp` (its dependency) have very long compilation times. These libraries are only compiled one time unless `make distclean` is invoked.
 
 
 ## Usage
 1. Edit `parameter.inp` and select the desired settings.
 2. Run `./fc_tables` in the project directory.
+
 To run in `N` cores, `OMP_NUM_THREADS=N ./fc_tables` should be used instead.
 
 
@@ -38,7 +39,7 @@ The file `parameter.inp` is splitted in three sections, namely `required`, `opti
 | `required` |   `odir`  |               | Directory to write the `Q` and `A` arrays.|
 | `required` |    `d`    |               | Number of matching points to use in the periodic extension. Note that `d` points generate a `d-1` order extension |
 | `required` |    `C`    |               | Number of continuation points to use in the periodic extension.|
-| `required` |  `tkind`  |               | `=0` to construct Dirichlet projector `Q` and, if compiled with `BLEND=yes` blend-to-zero operator `A`.`=1` to construct Neumann projector. `=2` to construct second normal derivative projector.|
+| `required` |  `tkind`  |               | `=0` to construct Dirichlet projector `Q` and, if compiled with `BLEND=yes`, blend-to-zero operator `A`.`=1` to construct Neumann projector. `=2` to construct second normal derivative projector.|
 |    `svd`   | `iters`   |     `200`     | Number of SVD iterations to perform. |
 |    `svd`   | `resume`  |     `0`       | `0` to start a new SVD decomposition, `1` to resume from `svd_temp.dat`. |
 |    `svd`   | `sstep`   |     `iters+1` | Number of SVD iterations between printing partial errors and saving `svd_temp.dat` for resuming. |
