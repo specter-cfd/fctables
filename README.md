@@ -49,7 +49,13 @@ The file `parameter.inp` is splitted in three sections, namely `required`, `opti
 | `optional` |    `e`    |     `C`       | Number of gridpoints after the transition to zero region. |
 
 ## Output format
-The resulting matrices are saved as double precision raw arrays in Fortran (i.e. column major) order and the endianness is fixed by the CPU architecture. For the blend-to-zero operator the output filename is `AC-d`, where `C` is the number of continuation points and `d` the number of matching points. `Qd` is the output filename for the Dirichlet projector. In the case of projectors involving derivatives (`tkind = 1` or `tkind = 2`), the first element in the output file is the grid spacing and then the appropriate double precision projector array (`Qnd` or `Q2nd`, respectively). A sample Python script named `load_tables.py` showcases how to load each output in a Python environment.
+The resulting matrices are saved as double precision raw arrays in Fortran (i.e. column major) order and the endianness is fixed by the CPU architecture. 
+
+For the blend-to-zero operator the output filename is `AC-d`, where `C` is the number of continuation points and `d` the number of matching points. `Qd` is the output filename for the Dirichlet projector. 
+
+In the case of projectors involving derivatives (`tkind = 1` or `tkind = 2`), the first element in the output file is the grid spacing and then the appropriate double precision projector array (`Qnd` or `Q2nd`, respectively). 
+
+A sample Python script named `load_tables.py` showcases how to load each output in a Python environment.
 
 ## Verifying the tables
 For convenience a simple Fortran 2008 program that compares numerical (using FC-Gram continuations) to analytical derivatives of the function $`J_0(x)e^x`$ is also     supplied. Nota that this program can only verify Dirichlet projectors and blend-to-zero operators (that is, `Q` and `A`), checking for other boundary conditions, for   example Neumann boundary conditions, is not yet supported in the test program. If a Fortran 2008 compiler isn't available to you, it should be straight forward to     edit `fc_test.f08`, edit the target function and compile it as a Fortran 2003 program.
