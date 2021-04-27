@@ -1,10 +1,10 @@
 tables/
-*.out
-*.sh
+/*.out
+/*.sh
 **/build*/
 **/*.mod
 **/*.o
-fc_tables.f90
-fc_tables
-*.mod
-*.dat
+/fc_tables.f90
+/fc_tables
+/*.mod
+/*.dat
