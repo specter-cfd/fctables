@@ -118,7 +118,7 @@
 !$      nth = OMP_GET_MAX_THREADS()
 200   FORMAT( "Obtaining operators for ", i0, " matching points and ", &
               i0, " continuation points") 
-      WRITE(*,200) C, d
+      WRITE(*,200) d, C
 201   FORMAT( "Running in ", i0, " cores with ", i0, " digits of precision") 
       WRITE(*,201) nth, mpipl 
 #ifdef BLEND_
