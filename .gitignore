@@ -4,7 +4,8 @@ tables/
 **/build*/
 **/*.mod
 **/*.o
-/fc_tables.f90
+/fc_tables.f03
 /fc_tables
+/fc_test
 /*.mod
 /*.dat

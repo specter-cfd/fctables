@@ -58,12 +58,16 @@
       ! Parameters and auxiliary variables
       TYPE (mp_real)   :: L
       TYPE (mp_real)   :: mprmp,mprmq
+      TYPE (mp_real)   :: egmin
 
+
+
+      INTEGER, PARAMETER :: DIGITS = mpipl
       INTEGER :: d,c,z,e,n
       INTEGER :: o,od,oc,oz,on
       INTEGER :: bw,nwn
       INTEGER :: i,j,k
-      INTEGER :: tkind
+      INTEGER :: tkind, ierr
 
 #ifdef BLEND_
       TYPE(MPRSVDPLAN) :: plansvd
@@ -74,19 +78,19 @@
 !$    INTEGER, EXTERNAL :: OMP_GET_MAX_THREADS
 
       CHARACTER (LEN=100) :: odir
-      CHARACTER (LEN=25)  :: ph
+      CHARACTER (LEN=25)  :: ph, eigenmin
       CHARACTER (LEN=5)   :: cs,ds
 
       ! Namelists for parameters
       NAMELIST / required / odir,d,c,tkind
-      NAMELIST / option   / z,o,bw,e
 #ifdef BLEND_
-      NAMELIST / svd      / resume,sstep,iters
+      NAMELIST / svd      / resume,sstep,iters,eigenmin
+      NAMELIST / option   / z,o,bw,e
 #endif
 
 #ifdef BLEND_
       z=0; o=0; bw=0; e=0
-      resume=0; iters=0; sstep=0
+      resume=0; iters=0; sstep=0; eigenmin='' 
 #endif
 
       OPEN(1,file='parameter.inp',status='unknown',form="formatted")
@@ -106,8 +110,11 @@
 
       IF ( iters .le. 0 )  iters = 200
       IF ( sstep .le. 0 )  sstep = iters+1
+      IF ( trim(adjustl(eigenmin)) .eq. '') THEN
+         WRITE(eigenmin,'(A,i0)') '1.e-', int(DIGITS*(0.9))
+      ENDIF
+      egmin = mpreal(eigenmin)
 #endif
-
 
       ! Construct strings with the resolutions (for saving)
       WRITE(cs,'(I5)') c
@@ -116,15 +123,8 @@
 
       nth = 1
 !$      nth = OMP_GET_MAX_THREADS()
-200   FORMAT( "Obtaining operators for ", i0, " matching points and ", &
-              i0, " continuation points") 
-      WRITE(*,200) d, C
-201   FORMAT( "Running in ", i0, " cores with ", i0, " digits of precision") 
-      WRITE(*,201) nth, mpipl 
-#ifdef BLEND_
-202   FORMAT( "z = ", i0, ", o = ", i0, ", bw = ", i0, ", e = ", i0) 
-      WRITE(*,202) z, o, bw, e
-#endif
+200   FORMAT( "Running in ", i0, " cores with ", i0, " digits of precision") 
+      WRITE(*,200) nth, mpipl 
 
       ! Assign derived parameters
       n = d+c+z+e
@@ -199,6 +199,9 @@
       ! Dirichlet Projector
       ! ---------------------
       IF ( tkind .eq. 0 ) THEN
+201      FORMAT( "Obtaining Dirichlet projector for ", i0, " matching points.")
+         WRITE(*,201) d
+
          ! Convert to DOUBLE and save
          DO j=1,d
             DO i=1,d
@@ -215,6 +218,10 @@
       ! Neumann Projector
       !---------------------
       ELSEIF ( tkind .eq. 1 ) THEN
+202      FORMAT( "Obtaining Neumann projector for ", i0, " matching points.")
+         WRITE(*,202) d
+
+
          ! Modified Vandermonde matrix
          DO j=1,d
                P(d,j) = (j-1)*grid_d(d)**(j-2)
@@ -256,6 +263,10 @@
       ! Neumann^2 Projector
       !---------------------
       ELSE IF ( tkind .eq. 2 ) THEN
+203      FORMAT( "Obtaining 2nd derivative projector for ", i0, &
+                 " matching points.")
+         WRITE(*,203) d
+
          ! Modified Vandermonde matrix
          DO j=1,d
                P(d,j) = (j-2)*(j-1)*grid_d(d)**(j-3)
@@ -297,6 +308,9 @@
       ! Robin Projector
       !---------------------
       ELSE IF ( tkind .eq. 3 ) THEN  !Robin
+204      FORMAT( "Obtaining Robin projector for ", i0, " matching points.")
+         WRITE(*,204) d
+
          ! Modified Vandermonde matrix
          DO j=1,d
                P(d,j) = (j-1)*grid_d(d)**(j-2) + mpreal('1.0')*grid_d(d)**(j-1)
@@ -340,6 +354,12 @@
       ! Blend-to-zero Operator
       !-------------------------------
       IF ( tkind .eq. 0 ) THEN
+205      FORMAT( "Obtaining blend-to-zero operator for ", i0, & 
+                 " matching points and ", i0, " continuation points.")
+         WRITE(*,205) d, C
+206      FORMAT( "z = ", i0, ", o = ", i0, ", bw = ", i0, ", e = ", i0) 
+         WRITE(*,206) z, o, bw, e
+
          ! Use R to "interpolate" Q in the finer grid.
          oQ = MPRSOLVEU(R,oP)
 
@@ -357,9 +377,10 @@
          ENDDO
 
          IF ( resume .eq. 0) THEN
-            CALL plansvd%init_plan(T1)
+            CALL plansvd%init_plan(T1, eigenmin=egmin)
          ELSEIF ( resume .eq. 1 ) THEN
             CALL plansvd%load_plan('svd_temp.dat')
+            ierr = plansvd%set_eigenmin(egmin)
          ENDIF
    
          ! Get orthogonal decomposition of T1
@@ -393,7 +414,9 @@
             IF ( sstep .le. iters ) CALL plansvd%save_plan('svd_temp.dat')
          ENDDO
 
-         ! Get SVD of T1 and check it
+         ierr = plansvd%set_eigenmin(egmin)
+
+         ! Get SVD from U and V
          CALL plansvd%to_svd()
 
          DO j=1,UBOUND(plansvd%V,2)
@@ -432,21 +455,12 @@
             ! RHS
             b(1:od) = (/( oQ(k,i), k=1,od )/)
             b(od+1:od+oz) = (/( mpreal('0.'), k=1,oz )/)
+  
+            ! Solve system of equtions to get trigonometric coefficients
+            x = plansvd%solve(b)
    
-            ! Compute D*V^t*x
-            x = MPRMATVEC(MPRTRANSPOSE(plansvd%U), b)
-   
-            ! Compute V^t*x. (i.e. divide x_i by sigma_i)
-            DO j = 1,2*nwn
-               IF ( plansvd%sigma(j) >= plansvd%eigenmin ) THEN
-                   x(j) = x(j)/plansvd%sigma(j)
-               ENDIF
-            ENDDO
-   
-            ! Compute x
-            x = MPRMATVEC(plansvd%V, x)
-   
-            ! Get continuation coefficients
+            ! Get continuation coefficients for each orthogonal
+            ! polynomial
             A(:,i) = MPRMATVEC(T3, x)
          ENDDO
    
@@ -479,49 +493,7 @@
       DEALLOCATE( ogrid_d, ogrid_z )
       DEALLOCATE( grid_z, wn )
       DEALLOCATE( x, b )
-      CALL plansvd%destroy_plan()
+      IF (tkind .eq. 0) CALL plansvd%destroy_plan()
 #endif
 
       END PROGRAM FCTABLES
-
-
-
-
-!            PRINT*, "m", plansvd%m, plansvd2%m
-!            PRINT*, "n", plansvd%n, plansvd2%n
-!            PRINT*, "digs", plansvd%digs, plansvd2%digs
-!            PRINT*, "step", plansvd%step, plansvd2%step
-!
-!            PRINT*, "eigenmin", dble(plansvd%eigenmin), dble(plansvd2%eigenmin)
-!            PRINT*, "eps", dble(plansvd%eps), dble(plansvd2%eps)
-!            PRINT*, "gmax", dble(plansvd%gmax), dble(plansvd2%gmax)
-!
-!            PRINT*, dble(plansvd%sweep(1,od/2,od/2)), dble(plansvd2%sweep(1,od/2,od/2))
-!            PRINT*, dble(plansvd%sweep(2,od/2,od/2)), dble(plansvd2%sweep(2,od/2,od/2))
-!            PRINT*, "sweep", MAXVAL(ABS(plansvd%sweep - plansvd%sweep))
-!
-!            PRINT*, dble(plansvd%U(od/2,nwn)), dble(plansvd2%U(od/2,nwn))
-!            mprmp = mpreal('0.')
-!            DO j=1,2*nwn
-!            DO i=1,od
-!               mprmp = max(mprmp, abs(plansvd%U(i,j)-plansvd2%U(i,j)))
-!            ENDDO
-!            ENDDO
-!            PRINT*, "U", DBLE(mprmp)
-!
-!            PRINT*, dble(plansvd%sigma(nwn)), dble(plansvd2%sigma(nwn))
-!            mprmp = mpreal('0.')
-!            DO i=1,2*nwn
-!               mprmp = max(mprmp, abs(plansvd%sigma(i)-plansvd2%sigma(i)))
-!            ENDDO
-!            PRINT*, "sigma", DBLE(mprmp)
-!
-!            PRINT*, dble(plansvd%V(nwn,nwn)), dble(plansvd2%V(nwn,nwn))
-!            mprmp = mpreal('0.')
-!            DO j=1,2*nwn
-!            DO i=1,2*nwn
-!               mprmp = max(mprmp, abs(plansvd%V(i,j)-plansvd2%V(i,j)))
-!            ENDDO
-!            ENDDO
-!            PRINT*, "V", DBLE(mprmp)
-

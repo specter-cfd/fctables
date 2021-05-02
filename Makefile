@@ -43,10 +43,10 @@ all: fc_tables
 
 edit:
 	$(CPP) -D_DIGITS=$(DIGITS) $(BLEND$(BLEND)) fc_tables.fpp \
-		-o fc_tables.f90 
+		-o fc_tables.f03 
 
 fc_tables: mpfun edit
-	$(FC) $(FFLAGS) $(LOPENMP) mprlinalg_mod.f90 fc_tables.f90 \
+	$(FC) $(FFLAGS) $(LOPENMP) mprlinalg_mod.f03 fc_tables.f03 \
 		$(MPFUN_BUILD)/*.o $(MPFUN_LINK_DEPS)\
 		$(MPFUN_INCLUDE) -o fc_tables
 

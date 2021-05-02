@@ -17,19 +17,22 @@
       IMPLICIT NONE
 
       TYPE, PUBLIC :: MPRSVDPLAN
-          TYPE (mp_real), DIMENSION(:,:), ALLOCATABLE :: U,V
-          TYPE (mp_real), DIMENSION(:), ALLOCATABLE   :: sigma
+          PRIVATE
+          TYPE (mp_real), DIMENSION(:,:), ALLOCATABLE, PUBLIC   :: U,V
+          TYPE (mp_real), DIMENSION(:)  , ALLOCATABLE, PUBLIC   :: sigma
+          INTEGER, PUBLIC :: steps
 
           INTEGER, DIMENSION(:,:,:), ALLOCATABLE :: sweep
-
-          TYPE(mp_real) :: eigenmin,eps,gmax
-          INTEGER       :: m,n,digs,steps
+          TYPE(mp_real)   :: eigenmin,eps,gmax
+          INTEGER         :: m,n,digs
 
           CONTAINS
              PRIVATE
              PROCEDURE, PASS(this) :: svd_init_plan,svd_destroy_plan
              PROCEDURE, PASS(this) :: svd_load_plan,svd_save_plan
              PROCEDURE, PASS(this) :: svd_iterate,svd_to_svd
+             PROCEDURE, PASS(this) :: svd_solve
+             PROCEDURE, PASS(this) :: svd_get_eigenmin,svd_set_eigenmin
              PROCEDURE             :: svd_output_procedure,svd_input_procedure
 
              PROCEDURE, PUBLIC  :: init_plan    => svd_init_plan
@@ -38,6 +41,9 @@
              PROCEDURE, PUBLIC  :: load_plan    => svd_load_plan
              PROCEDURE, PUBLIC  :: iterate      => svd_iterate
              PROCEDURE, PUBLIC  :: to_svd       => svd_to_svd
+             PROCEDURE, PUBLIC  :: solve        => svd_solve
+             PROCEDURE, PUBLIC  :: get_eigenmin => svd_get_eigenmin
+             PROCEDURE, PUBLIC  :: set_eigenmin => svd_set_eigenmin
              GENERIC :: WRITE(unformatted)      => svd_output_procedure
              GENERIC :: READ(unformatted)       => svd_input_procedure
       END TYPE MPRSVDPLAN
@@ -634,6 +640,7 @@
       END SUBROUTINE svd_iterate
 
 
+
 !======================================================================
       SUBROUTINE svd_to_svd(this)
 !----------------------------------------------------------------------
@@ -679,6 +686,102 @@
       RETURN
       END SUBROUTINE svd_to_svd
 
+!======================================================================
+      FUNCTION svd_solve(this, b) RESULT(x)
+!----------------------------------------------------------------------
+!      Solves the system of equations A*x = b using the SVD of A.
+!     Both x and b should be mpreal vectors.
+!
+!     Input:
+!       - this:  SVD plan instance.
+!       - b:     mpreal vector.          
+!
+!     Output:
+!       - x: The solution to the system of equations.
+!
+!     TODO: implement A*X = B (solver for matrices)
+!--------------------------------------------------------------------
+
+      IMPLICIT NONE
+
+      CLASS(MPRSVDPLAN), INTENT(IN)                          :: this
+      TYPE(mp_real), DIMENSION(UBOUND(this%U,1)), INTENT(IN) :: b
+      TYPE(mp_real), DIMENSION(UBOUND(this%U,2))             :: x
+
+      INTEGER :: i
+
+      ! Compute D*V^t*x  ( = U^t*b)
+      x = MPRMATVEC(MPRTRANSPOSE(this%U), b)
+
+      ! Compute V^t*x. (i.e. divide x_i by sigma_i)
+!$omp parallel do
+      DO i = 1,UBOUND(x,1)
+         IF ( this%sigma(i) >= this%get_eigenmin() ) THEN
+             x(i) = x(i)/this%sigma(i)
+         ENDIF
+      ENDDO
+
+      ! Compute x
+      x = MPRMATVEC(this%V, x)
+
+      RETURN
+      END FUNCTION svd_solve
+
+
+!======================================================================
+      FUNCTION svd_get_eigenmin(this) RESULT(out)
+!----------------------------------------------------------------------
+!      Returns the minimum singular value to consider in the SVD
+!     decomposition. Singular values under eigenmin are considered 0.
+!
+!     Input:
+!       - this: SVD plan
+!
+!     Output:
+!       - out: Current minimum singular value to consider non 0
+!
+!     TODO: Sanity checks
+!----------------------------------------------------------------------
+      IMPLICIT NONE
+
+
+      CLASS(MPRSVDPLAN), INTENT(IN) :: this
+      TYPE(mp_real)                 :: out
+
+      out = this%eigenmin
+    
+      RETURN
+      END FUNCTION svd_get_eigenmin
+
+!======================================================================
+      FUNCTION svd_set_eigenmin(this, val) RESULT(stat)
+!----------------------------------------------------------------------
+!      Sets the minimum singular value to consider in the SVD
+!     decomposition. Singular values under eigenmin are considered 0.
+!
+!     Input:
+!       - this: SVD plan
+!       - val: desired new minimum singular value to consider (MPREAL)
+!
+!     Output:
+!       - this: SVD plan
+!
+!     TODO: Sanity checks
+!----------------------------------------------------------------------
+      IMPLICIT NONE
+
+
+      CLASS(MPRSVDPLAN), INTENT(INOUT) :: this
+      TYPE(mp_real), INTENT(IN)        :: val
+      INTEGER                          :: stat
+
+      this%eigenmin = val
+
+      stat = 0   ! TODO change return value according to success or not
+    
+      RETURN
+      END FUNCTION svd_set_eigenmin
+
 
 !=====================================================================
       FUNCTION check_orthogonal(arr) RESULT(maxin)
@@ -697,22 +800,30 @@
       TYPE(mp_real), DIMENSION(:,:), INTENT(IN) :: arr
       TYPE(mp_real) :: maxin
 
+      TYPE(mp_real) :: locmax
+
       TYPE(mp_real) :: tmp
       INTEGER :: i,j,k
 
-      maxin = mpreal('0.')
+      maxin  = mpreal('0.')
+      locmax = mpreal('0.')
+!omp parallel do private(j,k,tmp,locmax)
       DO i=1,UBOUND(arr,2)
       DO j=i+1,UBOUND(arr,2)
          tmp = mpreal('0.')
          DO k=1,UBOUND(arr,1)
             tmp = tmp + arr(k,i)*arr(k,j)
          ENDDO
-         maxin = max(maxin,tmp)
+         locmax = MAX(locmax,tmp) 
       ENDDO
+! Manual max reduction because OpenMP max reduction doesn't handle
+! mpfun types.
+!$omp critical            
+         maxin = MAX(maxin, locmax)
+!$omp end critical
       ENDDO
 
       RETURN
       END FUNCTION check_orthogonal
-
 
       END MODULE mprlinalg

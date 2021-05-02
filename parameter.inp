@@ -13,9 +13,10 @@ tkind = 0        ! =0 creates projector for Dirichlet boundary condition
 ! the code will run for 200 iterations and won't output partial results,
 ! just the resulting blend to zero operator A.
 &svd
-iters  =         ! Number of SVD iterations to perform. 
-resume =         ! 0 for fresh SVD start, 1 to resume from `svd_temp.dat`
-sstep  =         ! Save U and V every sstep SVD iterations.
+iters     =      ! Number of SVD iterations to perform. 
+resume    =      ! 0 for fresh SVD start, 1 to resume from `svd_temp.dat`
+sstep     =      ! Save U and V every sstep SVD iterations.
+eigenmin  =      ! Singular values smaller than eigenmin are considered 0.
 /
 
 ! These parameters are optional and can be left blank.
