@@ -58,8 +58,7 @@ test:
 	$(FC) $(FFLAGS) fc_test.f08 -o fc_test
 
 clean:
-	rm -f *.mod fc_tables fc_test
+	rm -f *.mod fc_tables fc_test fc_tables.f03
 
-distclean:
+distclean: clean
 	$(MAKE) distclean -C contrib/mpfun -f $(MPFUN_MAKE)
-	rm -f *.mod fc_tables fc_tables.f90 fc_test
