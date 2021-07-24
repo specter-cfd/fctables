@@ -253,7 +253,7 @@
             ENDDO
          ENDDO
    
-         OPEN(10, FILE=trim(odir) // '/Qn' // trim(adjustl(ds)) //  '.dat', &
+         OPEN(10, FILE=trim(odir) // '/Q1n' // trim(adjustl(ds)) //  '.dat', &
                  FORM='unformatted', ACCESS='stream')
             WRITE(10) DBLE(grid_n(2))
             WRITE(10) Qd

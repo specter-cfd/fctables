@@ -29,5 +29,3 @@ try:
     Q_neu2  = Qneu2[1:].reshape((d,d), order="F")
     print(dx_neu2)
     print(Q_neu2)
-
-
