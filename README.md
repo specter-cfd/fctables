@@ -104,5 +104,6 @@ to the simplicity of the `fft` implementation).
 The necessary table is automatically loaded and tested based on the values 
 present in the `parameter.inp` file.
 
+---
 ### Author
 Mauro Fontana - Department of Physics - University of Buenos Aires.
