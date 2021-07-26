@@ -62,7 +62,7 @@ def build_fctables(digits=256, blend=False):
 
     finally:
         copy('.Makefile.in', 'Makefile.in')
-        os.remove('.Makefile')
+        os.remove('.Makefile.in')
 
 def backup_parameters():
     """
