@@ -1,7 +1,8 @@
 !=================================================================
       PROGRAM FCTABLES
 !=================================================================
-! Program to compute FC-Gram tables for usage in NiFTy code.
+! Program to compute FC-Gram tables for usage in SPECTER code
+! (https://github.com/mfontanaar/SPECTER).
 ! The related algorithm relies on arbitrary precision arithmetic
 ! provided here by the MPFUN library, by David H. Bailey and 
 ! available at: https://www.davidhbailey.com/dhbsoftware/.
